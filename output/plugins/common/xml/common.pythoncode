@@ -32,7 +32,6 @@ Python code generation written by
 		</template>
 		<template name="settings">
 			#ifnotequal $default "0" @{ #nl self.$name.SetDefault() @}
-			#ifnotequal $auth_needed "0" @{ #nl self.$name.SetAuthNeeded() @}
 		</template>
 		<template name="evt_connect_OnButtonClick">self.$name.Bind( wx.EVT_BUTTON, #handler )</template>
 	</templates>

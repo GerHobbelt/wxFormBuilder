@@ -580,13 +580,6 @@ bool CppCodeGenerator::GenerateCode( PObjectBase project )
 	if ( useEnumProperty && useEnumProperty->GetValueAsInteger() )
 		useEnum = true;
 
-	m_useArrayEnum = false;
-	const auto& useArrayEnumProperty = project->GetProperty(wxT("use_array_enum"));
-	if (useArrayEnumProperty && useArrayEnumProperty->GetValueAsInteger())
-	{
-		m_useArrayEnum = true;
-	}
-
 	m_i18n = false;
 	PProperty i18nProperty = project->GetProperty( wxT( "internationalize" ) );
 	if ( i18nProperty && i18nProperty->GetValueAsInteger() )

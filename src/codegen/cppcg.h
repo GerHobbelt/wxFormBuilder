@@ -80,7 +80,7 @@ private:
 	PCodeWriter m_source;
 
 	bool m_useRelativePath;
-	bool m_useArrayEnum;
+	bool m_useArrayEnum = false;
 	bool m_i18n;
 	wxString m_basePath;
 	unsigned int m_firstID;

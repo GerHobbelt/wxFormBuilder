@@ -212,10 +212,6 @@ public:
 			button->SetDefault();
 		}
 
-		if (obj->GetPropertyAsInteger(_("auth_needed")) != 0) {
-			button->SetAuthNeeded();
-		}
-
 		if (!obj->IsNull(_("bitmap"))) {
 			button->SetBitmap(obj->GetPropertyAsBitmap(_("bitmap")));
 		}
@@ -254,7 +250,6 @@ public:
 		xrc.AddWindowProperties();
 		xrc.AddProperty(_("label"),_("label"),XRC_TYPE_TEXT);
 		xrc.AddProperty(_("default"),_("default"),XRC_TYPE_BOOL);
-		xrc.AddProperty(_("auth_needed"), _("auth_needed"), XRC_TYPE_BOOL);
 		xrc.AddProperty(_("markup"), _("markup"), XRC_TYPE_BOOL);
 		xrc.AddProperty(_("bitmap"), _("bitmap"), XRC_TYPE_BITMAP);
 		if (!obj->IsNull(_("disabled"))) {
@@ -283,7 +278,6 @@ public:
 		filter.AddWindowProperties();
 		filter.AddProperty(_("label"),_("label"),XRC_TYPE_TEXT);
 		filter.AddProperty(_("default"),_("default"),XRC_TYPE_BOOL);
-		filter.AddProperty(_("auth_needed"), _("auth_needed"), XRC_TYPE_BOOL);
 		filter.AddProperty(_("markup"), _("markup"), XRC_TYPE_BOOL);
 		filter.AddProperty(_("bitmap"), _("bitmap"), XRC_TYPE_BITMAP);
 		filter.AddProperty(_("disabled"), _("disabled"), XRC_TYPE_BITMAP);
@@ -316,10 +310,6 @@ public:
 		if ( obj->GetPropertyAsInteger( _("default") ) != 0 )
 		{
 			button->SetDefault();
-		}
-
-		if (obj->GetPropertyAsInteger(_("auth_needed")) != 0) {
-			button->SetAuthNeeded();
 		}
 
 		if (!obj->IsNull(_("disabled")))
@@ -378,7 +368,6 @@ public:
 			xrc.AddProperty(_("margins"), _("margins"), XRC_TYPE_SIZE);
 		}
 		xrc.AddProperty(_("default"),_("default"),XRC_TYPE_BOOL);
-		xrc.AddProperty(_("auth_needed"), _("auth_needed"), XRC_TYPE_BOOL);
 		return xrc.GetXrcObject();
 	}
 
@@ -393,7 +382,6 @@ public:
 		filter.AddProperty(_("position"), _("position"), XRC_TYPE_TEXT);
 		filter.AddProperty(_("margins"), _("margins"), XRC_TYPE_SIZE);
 		filter.AddProperty(_("default"),_("default"),XRC_TYPE_BOOL);
-		filter.AddProperty(_("auth_needed"), _("auth_needed"), XRC_TYPE_BOOL);
 		return filter.GetXfbObject();
 	}
 };
