@@ -83,7 +83,7 @@ void ResizablePanel::OnMouseMotion(wxMouseEvent& e)
   if (m_sizing != NONE)
   { 
     wxScreenDC dc;
-    wxPen pen(*wxBLACK, 1, wxDOT);
+    wxPen pen(*wxBLACK, 1, wxPENSTYLE_DOT);
     
     dc.SetPen(pen);
     dc.SetBrush(*wxTRANSPARENT_BRUSH);
@@ -145,7 +145,7 @@ void ResizablePanel::OnLeftUp(wxMouseEvent& )
     ReleaseMouse();
     
     wxScreenDC dc;
-    wxPen pen(*wxBLACK, 1, wxDOT);
+    wxPen pen(*wxBLACK, 1, wxPENSTYLE_DOT);
     
     dc.SetPen(pen);
     dc.SetBrush(*wxTRANSPARENT_BRUSH);

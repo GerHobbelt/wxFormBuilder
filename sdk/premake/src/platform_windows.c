@@ -33,31 +33,31 @@ struct PlatformMaskData
 {
 	char* maskPath;
 	HANDLE handle;
-	WIN32_FIND_DATA entry;
+	WIN32_FIND_DATAA entry;
 	int isFirst;
 };
 
-static int (__stdcall *CoCreateGuid)(char*) = NULL;
+static int (__stdcall *CoCreateGuid)(LPSTR) = NULL;
 
 
 int platform_chdir(const char* path)
 {
-	return SetCurrentDirectory(path);
+	return SetCurrentDirectoryA(path);
 }
 
 
 int platform_copyfile(const char* src, const char* dest)
 {
-	return CopyFile(src, dest, FALSE);
+	return CopyFileA(src, dest, FALSE);
 }
 
 
 int platform_findlib(const char* name, char* buffer, int len)
 {
-	HMODULE hDll = LoadLibrary(name);
+	HMODULE hDll = LoadLibraryA(name);
 	if (hDll != NULL)
 	{
-		GetModuleFileName(hDll, buffer, len);
+		GetModuleFileNameA(hDll, buffer, len);
 		strcpy(buffer, path_getdir(buffer));
 		FreeLibrary(hDll);
 		return 1;
@@ -70,7 +70,7 @@ int platform_findlib(const char* name, char* buffer, int len)
 
 int platform_getcwd(char* buffer, int len)
 {
-	GetCurrentDirectory(len, buffer);
+	GetCurrentDirectoryA(len, buffer);
 	return 1;
 }
 
@@ -79,10 +79,10 @@ void platform_getuuid(char* uuid)
 {
 	if (CoCreateGuid == NULL)
 	{
-		HMODULE hOleDll = LoadLibrary("OLE32.DLL");
-		CoCreateGuid = (int(__stdcall*)(char*))GetProcAddress(hOleDll, "CoCreateGuid");
+		HMODULE hOleDll = LoadLibraryA("OLE32.DLL");
+		CoCreateGuid = (int(__stdcall*)(LPSTR))GetProcAddress(hOleDll, "CoCreateGuid");
 	}
-	CoCreateGuid((char*)uuid);
+	CoCreateGuid(uuid);
 }
 
 
@@ -124,7 +124,7 @@ int platform_mask_getnext(MaskHandle data)
 	}
 	else
 	{
-		return FindNextFile(data->handle, &data->entry);
+		return FindNextFileA(data->handle, &data->entry);
 	}
 }
 
@@ -140,7 +140,7 @@ MaskHandle platform_mask_open(const char* mask)
 	const char* path = path_getdir(mask);
 
 	MaskHandle data = ALLOCT(struct PlatformMaskData);
-	data->handle = FindFirstFile(mask, &data->entry);
+	data->handle = FindFirstFileA(mask, &data->entry);
 	data->maskPath = (char*)malloc(strlen(path) + 1);
 	strcpy(data->maskPath, path);
 	data->isFirst  = 1;
@@ -150,26 +150,26 @@ MaskHandle platform_mask_open(const char* mask)
 
 int platform_mkdir(const char* path)
 {
-	return CreateDirectory(path, NULL);
+	return CreateDirectoryA(path, NULL);
 }
 
 
 int platform_remove(const char* path)
 {
-	DeleteFile(path);
+	DeleteFileA(path);
 	return 1;
 }
 
 
 int platform_rmdir(const char* path)
 {
-	WIN32_FIND_DATA data;
+	WIN32_FIND_DATAA data;
 	HANDLE hDir;
 
 	char* buffer = (char*)malloc(strlen(path) + 6);
 	strcpy(buffer, path);
 	strcat(buffer, "\\*.*");
-	hDir = FindFirstFile(buffer, &data);
+	hDir = FindFirstFileA(buffer, &data);
 	if (hDir == INVALID_HANDLE_VALUE)
 		return 0;
 	free(buffer);
@@ -193,15 +193,15 @@ int platform_rmdir(const char* path)
 			/* In order to delete not-checked-out version controlled files I need
 			 * to clear the read-only flag first */
 			if (data.dwFileAttributes & FILE_ATTRIBUTE_READONLY)
-				SetFileAttributes(buffer, data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY);
-			DeleteFile(buffer);
+				SetFileAttributesA(buffer, data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY);
+			DeleteFileA(buffer);
 		}
 
 		free(buffer);
-	} while (FindNextFile(hDir, &data));
+	} while (FindNextFileA(hDir, &data));
 	FindClose(hDir);
 
-	RemoveDirectory(path);
+	RemoveDirectoryA(path);
 	return 1;
 }
 

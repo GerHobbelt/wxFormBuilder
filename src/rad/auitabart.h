@@ -5,10 +5,16 @@
 
 class AuiTabArt : public wxAuiGenericTabArt {
 public:
-	wxSize GetTabSize(wxDC& dc, wxWindow* wnd, const wxString& caption, const wxBitmap& bitmap,
-	                  bool active, int close_button_state, int* x_extent) override {
-		return wxAuiGenericTabArt::GetTabSize(dc, wnd, caption, bitmap, active, close_button_state,
-		                                      x_extent) +
+	wxSize GetTabSize(
+		wxDC& dc,
+		wxWindow* wnd,
+		const wxString& caption,
+		const wxBitmapBundle& bitmap,
+		bool active,
+		int closeButtonState,
+		int* xExtent) wxOVERRIDE {
+		return wxAuiGenericTabArt::GetTabSize(dc, wnd, caption, bitmap, active, closeButtonState,
+		                                      xExtent) +
 		       wxSize(0, 2);
 	}
 };
