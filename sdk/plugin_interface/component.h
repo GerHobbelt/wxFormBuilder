@@ -218,7 +218,10 @@ public:
 };
 
 #ifdef BUILD_DLL
-	#define DLL_FUNC extern "C" WXEXPORT
+#error "Make sure to use the new WXFORMBUILDER_BUILD_PLUGIN_DLL #define instead of BUILD_DLL"
+#endif
+#if defined(WXFORMBUILDER_BUILD_PLUGIN_DLL)
+#define DLL_FUNC extern "C" WXEXPORT
 #else
 	#define DLL_FUNC extern "C"
 #endif
