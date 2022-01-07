@@ -37,9 +37,9 @@
 
 #include "wxfbTest_GUI.h"
 
-#include "../bin/resources/icons/balign.xpm"
-#include "../bin/resources/icons/copy.xpm"
-#include "../bin/resources/icons/cut.xpm"
+#include "./wxfbTestButton.xpm"
+#include "../output/resources/icons/copy.xpm"
+#include "../output/resources/icons/cut.xpm"
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -79,7 +79,7 @@ MainPanel::MainPanel( wxWindow* parent, int id, wxPoint pos, wxSize size, int st
 	m_button1 = new wxButton( this, ID_DEFAULT, wxT("MyButton"), wxDefaultPosition, wxDefaultSize, 0 );
 	bSizer2->Add( m_button1, 0, wxALL, 5 );
 	
-	m_bpButton1 = new wxBitmapButton( this, ID_DEFAULT, wxBitmap( balign_xpm ), wxDefaultPosition, wxDefaultSize, wxBU_AUTODRAW );
+	m_bpButton1 = new wxBitmapButton( this, ID_DEFAULT, wxBitmap( wxfbTestButton_xpm ), wxDefaultPosition, wxDefaultSize, wxBU_AUTODRAW );
 	bSizer2->Add( m_bpButton1, 0, wxALL, 5 );
 	
 	m_textCtrl1 = new wxTextCtrl( this, ID_DEFAULT, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0 );
@@ -119,7 +119,7 @@ MainPanel::MainPanel( wxWindow* parent, int id, wxPoint pos, wxSize size, int st
 	wxGridSizer* gSizer1;
 	gSizer1 = new wxGridSizer( 2, 2, 0, 0 );
 	
-	m_bitmap1 = new wxStaticBitmap( this, ID_DEFAULT, wxBitmap( wxT("../bin/resources/splash.png"), wxBITMAP_TYPE_ANY ), wxDefaultPosition, wxSize( 100,20 ), 0 );
+	m_bitmap1 = new wxStaticBitmap( this, ID_DEFAULT, wxBitmap( wxT("./resources/splash.png"), wxBITMAP_TYPE_ANY ), wxDefaultPosition, wxSize( 100,20 ), 0 );
 	gSizer1->Add( m_bitmap1, 1, wxALL|wxEXPAND, 5 );
 	
 	wxBoxSizer* bSizer;
