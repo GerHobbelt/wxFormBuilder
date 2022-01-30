@@ -25,6 +25,8 @@
 
 #include "bitmaps.h"
 
+#include <wx/debugheap.h>
+
 #include "../utils/stringutils.h"
 #include "../utils/typeconv.h"
 #include "../utils/wxfbexception.h"
@@ -32,7 +34,11 @@
 #include <default.xpm>
 #include <ticpp.h>
 
+FZ_HEAPDBG_TRACKER_SECTION_START_MARKER(_1)
+
 static std::map< wxString, wxBitmap > m_bitmaps;
+
+FZ_HEAPDBG_TRACKER_SECTION_END_MARKER(_1)
 
 wxBitmap AppBitmaps::GetBitmap( wxString iconname, unsigned int size )
 {

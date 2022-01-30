@@ -31,6 +31,7 @@
 #include "../../utils/typeconv.h"
 #include "../appdata.h"
 
+#include <wx/debugheap.h>
 #include <wx/regex.h>
 
 // -----------------------------------------------------------------------
@@ -140,9 +141,13 @@ wxVariant wxFBPointProperty::ChildChanged(wxVariant& thisValue, const int childI
 // wxFBBitmapProperty
 // -----------------------------------------------------------------------
 
+FZ_HEAPDBG_TRACKER_SECTION_START_MARKER(_2)
+
 // static long gs_imageFilterIndex = -1; TODO: new wxPropertyGrid misses the
 //                                             wxPG_FILE_FILTER_INDEX attribute ID
 static wxString gs_imageInitialPath = wxEmptyString;
+
+FZ_HEAPDBG_TRACKER_SECTION_END_MARKER(_2)
 
 #if wxCHECK_VERSION(3, 1, 0)
 wxPG_IMPLEMENT_PROPERTY_CLASS(wxFBBitmapProperty, wxPGProperty, TextCtrl)
