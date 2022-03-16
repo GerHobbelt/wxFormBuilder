@@ -31,6 +31,9 @@
 #include <vector>
 #include <wx/wx.h>
 
+#undef min
+#undef max
+
 class ObjectType;
 
 typedef std::shared_ptr<ObjectType> PObjectType;
