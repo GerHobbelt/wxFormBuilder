@@ -23,31 +23,31 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifndef __XRC_FILTER__
-#define __XRC_FILTER__
-
-#include "database.h"
+#ifndef MODEL_XRCFILTER_H
+#define MODEL_XRCFILTER_H
 
 #include <ticpp.h>
+
+#include "model/database.h"
+
 
 /**
  * Filtro de importación de un fichero XRC.
  */
 class XrcLoader
 {
- private:
-  PObjectDatabase m_objDb;
+private:
+    PObjectDatabase m_objDb;
 
-  PObjectBase GetObject(ticpp::Element *xrcObj, PObjectBase parent);
+    PObjectBase GetObject(ticpp::Element* xrcObj, PObjectBase parent);
 
- public:
+public:
+    void SetObjectDatabase(PObjectDatabase db) { m_objDb = db; }
 
-  void SetObjectDatabase(PObjectDatabase db) { m_objDb = db; }
-
-  /**
-   * Dado un árbol XML en formato XRC, crea el arbol de objetos asociado.
-   */
-  PObjectBase GetProject(ticpp::Document* xrcDoc);
+    /**
+     * Dado un árbol XML en formato XRC, crea el arbol de objetos asociado.
+     */
+    PObjectBase GetProject(ticpp::Document* xrcDoc);
 };
 
-#endif //__XRC_FILTER__
+#endif  // MODEL_XRCFILTER_H

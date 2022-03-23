@@ -23,14 +23,15 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifndef _XRC_CODE_GEN_
-#define _XRC_CODE_GEN_
+#ifndef CODEGEN_XRCCG_H
+#define CODEGEN_XRCCG_H
 
-#include "codegen.h"
+#include "codegen/codegen.h"
+
 
 namespace ticpp
 {
-	class Element;
+class Element;
 }
 
 /// XRC code generator.
@@ -38,18 +39,17 @@ namespace ticpp
 class XrcCodeGenerator : public CodeGenerator
 {
 private:
-	PCodeWriter m_cw;
-	std::vector<ticpp::Element*> m_contextMenus;
+    PCodeWriter m_cw;
+    std::vector<ticpp::Element*> m_contextMenus;
 
-	ticpp::Element* GetElement( PObjectBase obj, ticpp::Element* parent = NULL );
+    ticpp::Element* GetElement(PObjectBase obj, ticpp::Element* parent = NULL);
 
 public:
-	/// Configures the code writer for the XML file.
-	void SetWriter( PCodeWriter cw );
+    /// Configures the code writer for the XML file.
+    void SetWriter(PCodeWriter cw);
 
-	/// Generates the XRC code for the project.
-	bool GenerateCode(PObjectBase project) override;
+    /// Generates the XRC code for the project.
+    bool GenerateCode(PObjectBase project) override;
 };
 
-
-#endif //_XRC_CODE_GEN_
+#endif  // CODEGEN_XRCCG_H

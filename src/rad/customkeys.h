@@ -23,21 +23,22 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifndef __KEYS_HANDLER__
-#define __KEYS_HANDLER__
+#ifndef RAD_CUSTOMKEYS_H
+#define RAD_CUSTOMKEYS_H
 
-#include "wx/wx.h"
+#include <wx/wx.h>
+
 
 // This class is not needed because shortcuts are made through acceletors
 // of the MainFrame menubar.
 class CustomKeysEvtHandler : public wxEvtHandler
 {
- private:
-  CustomKeysEvtHandler() {}
+private:
+    CustomKeysEvtHandler() {}
 
-  DECLARE_EVENT_TABLE()
- public:
-  void OnKeyPress(wxKeyEvent &event);
+    DECLARE_EVENT_TABLE()
+public:
+    void OnKeyPress(wxKeyEvent& event);
 };
 
-#endif //__KEYS_HANDLER__
+#endif  // RAD_CUSTOMKEYS_H
