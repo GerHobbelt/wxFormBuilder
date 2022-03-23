@@ -878,7 +878,7 @@ wxString TypeConv::ArrayStringToString(const wxArrayString& arrayStr)
 {
     wxString result;
 
-	result = wxArrayStringProperty::ArrayStringToString( arrayStr, '"', 1 );
+    result = wxArrayStringProperty::ArrayStringToString(arrayStr, '"', 1);
 
     return result;
 }
