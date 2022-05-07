@@ -43,7 +43,7 @@ endif()
 
 if(NOT DEFINED CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
-elseif(CMAKE_CXX_STANDARD LESS 17)
+elseif(CMAKE_CXX_STANDARD LESS 17 OR CMAKE_CXX_STANDARD GREATER_EQUAL 98)
   message(FATAL_ERROR "The CMAKE_CXX_STANDARD value needs to be at least 17, current value: ${CMAKE_CXX_STANDARD}")
 endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -74,6 +74,7 @@ else()
 endif()
 option(WXFB_STAGE_BUILD "Use stage directory to build directly executable variant that doesn't need to be installed." ${stageBuildDefault})
 unset(stageBuildDefault)
+option(WXFB_ENABLE_EXTRA_CHECKS "Enable additional static code analysis." OFF)
 
 # Adjust paths to match wxStandardPaths implementation, use own cache variables to share across CMake scopes
 include(GNUInstallDirs)
@@ -98,6 +99,16 @@ else()
 endif()
 # TODO: Currently generator languages cannot be configured
 set(WXFB_GENERATOR_LANGUAGES cpp python lua php CACHE INTERNAL "")
+if(WXFB_ENABLE_EXTRA_CHECKS)
+  set(extraOptions "")
+  if(WIN32 AND NOT MSYS)
+    list(APPEND extraOptions PATH_SUFFIXES LLVM/bin)
+  endif()
+  find_program(clang-tidy_cmd NAMES clang-tidy ${extraOptions} REQUIRED)
+  mark_as_advanced(clang-tidy_cmd)
+  unset(extraOptions)
+  set(CMAKE_CXX_CLANG_TIDY "${clang-tidy_cmd}")
+endif()
 
 include(cmake/variable.cmake)
 
@@ -126,7 +137,7 @@ find_package(wxWidgets ${wxWidgetsVersion} REQUIRED ${wxWidgetsComponentsRequire
 #       an import library can not be created (easily?), create an interface library instead.
 #       This has the drawback that this library is always in global scope, this might make it difficult to use wxWidgets
 #       with different components elsewhere.
-if(wxWidgets_FOUND AND NOT TARGET wxWidgets::wxWidgets)
+if(PROJECT_IS_TOP_LEVEL OR WXFB_BUILD_PLUGIN_HOST)
   message(DEBUG "Creating target wxWidgets::wxWidgets")
   add_library(wxWidgets_wxWidgets INTERFACE)
   add_library(wxWidgets::wxWidgets ALIAS wxWidgets_wxWidgets)
@@ -162,6 +173,8 @@ if(wxWidgets_FOUND AND NOT TARGET wxWidgets::wxWidgets)
   if(wxWidgets_LIBRARIES)
     target_link_libraries(wxWidgets_wxWidgets INTERFACE ${wxWidgets_LIBRARIES})
   endif()
+else()
+  include(${wxWidgets_USE_FILE})
 endif()
 unset(wxWidgetsComponentsRequired)
 unset(wxWidgetsVersion)

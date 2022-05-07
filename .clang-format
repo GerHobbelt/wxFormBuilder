@@ -15,7 +15,7 @@ ContinuationIndentWidth: 2
 DerivePointerAlignment: false
 IncludeBlocks: Regroup
 IncludeCategories:
-  # Project SDK
+  # wxFormBuilder SDK
   - Regex:           '^<(component\.h|fontcontainer\.h|plugin\.h|xrcconv\.h|forms/wizard\.h|default\.xpm)>'
     Priority:        5
   # Libraries
@@ -27,12 +27,7 @@ IncludeCategories:
   - Regex:           '^<ticpp'
     Priority:        4
   # C standard library headers
-  - Regex: >-
-      '<('
-      'cassert|ccomplex|cctype|cerrno|cfenv|cfloat|cinttypes|ciso646|climits|clocale|cmath|csetjmp|csignal|'
-      'cstdalign|cstdarg|cstdatomic|cstdbool|cstddef|cstdint|cstdio|cstdlib|cstdnoreturn|'
-      'cstring|ctgmath|cthreads|ctime|cuchar|cwchar|cwctype'
-      ')>'
+  - Regex:           '<(cassert|ccomplex|cctype|cerrno|cfenv|cfloat|cinttypes|ciso646|climits|clocale|cmath|csetjmp|csignal|cstdalign|cstdarg|cstdatomic|cstdbool|cstddef|cstdint|cstdio|cstdlib|cstdnoreturn|cstring|ctgmath|cthreads|ctime|cuchar|cwchar|cwctype)>'
     Priority:        2
   # C system headers
   - Regex:           '^<.*\.h>'

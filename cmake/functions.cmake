@@ -71,7 +71,7 @@ function(wxfb_add_plugin PLUGIN_NAME)
   set_target_properties(wxFormBuilder_${PLUGIN_NAME} PROPERTIES
     OUTPUT_NAME "${PLUGIN_NAME}"
   )
-  if(APPLE) 
+  if(APPLE)
     # The current plugin loader code requires this extension
     # TODO: Setting CMAKE_SHARED_MODULE_SUFFIX inside this function has no effect, setting it
     #       in the toplevel CMake file has. Setting the property directly does also work.
@@ -120,6 +120,7 @@ function(wxfb_add_plugin PLUGIN_NAME)
   endif()
 
   set_target_properties(wxFormBuilder_${PLUGIN_NAME} PROPERTIES FOLDER "Plugins/${PLUGIN_NAME}")
+  wxfb_target_source_groups(wxFormBuilder_${PLUGIN_NAME} STRIP_PREFIX "${PLUGIN_DIRECTORY}")
 
   # Do not install the RUNTIME_DEPENDENCIES here, because of the currently defined install locations
   # they would get installed next to the plugin. Instead, register the dependencies in a RUNTIME_DEPENDENCY_SET
@@ -367,4 +368,65 @@ function(wxfb_install_files arg_BASE_DIRECTORY arg_FILES arg_DESTINATION)
     cmake_path(SET installDir NORMALIZE "${arg_DESTINATION}/${fileDir}")
     install(FILES "${file}" DESTINATION "${installDir}")
   endforeach()
+endfunction()
+
+
+#[[
+Create default source groups.
+
+wxfb_target_source_groups(<target>
+                          [STRIP_PREFIX <strip-prefix>])
+
+Create source groups "Header Files", "Source Files", "Generated Files" for the source files
+of the target <target>. Only files inside the directory trees rooted at SOURCE_DIR and BINARY_DIR
+of <target> are grouped.
+
+If specified, the common path prefix <strip-prefix> of the files gets removed from the created groups,
+it is an error if not all paths start with that prefix.
+]]
+function(wxfb_target_source_groups arg_TARGET)
+  set(options "")
+  set(singleValues STRIP_PREFIX)
+  set(multiValues "")
+  cmake_parse_arguments(arg "${options}" "${singleValues}" "${multiValues}" ${ARGN})
+
+  get_target_property(sourceDir ${arg_TARGET} SOURCE_DIR)
+  get_target_property(binaryDir ${arg_TARGET} BINARY_DIR)
+  get_target_property(sources ${arg_TARGET} SOURCES)
+
+  if(arg_STRIP_PREFIX)
+    cmake_path(SET sourceTreeDir NORMALIZE "${sourceDir}/${arg_STRIP_PREFIX}")
+    cmake_path(SET binaryTreeDir NORMALIZE "${binaryDir}/${arg_STRIP_PREFIX}")
+  else()
+    set(sourceTreeDir "${sourceDir}")
+    set(binaryTreeDir "${binaryDir}")
+  endif()
+
+  set(fileSources "")
+  foreach(source IN LISTS sources)
+    cmake_path(ABSOLUTE_PATH source BASE_DIRECTORY "${sourceDir}" NORMALIZE OUTPUT_VARIABLE file)
+    list(APPEND fileSources "${file}")
+  endforeach()
+
+  set(filterSources ${fileSources})
+  list(FILTER filterSources INCLUDE REGEX "^${sourceDir}/.+\\.h(h|pp)?(\\.in)?$")
+  source_group(
+    TREE "${sourceTreeDir}"
+    PREFIX "Header Files"
+    FILES ${filterSources}
+  )
+  set(filterSources ${fileSources})
+  list(FILTER filterSources INCLUDE REGEX "^${sourceDir}/.+\\.c(c|xx|pp)?(\\.in)?$")
+  source_group(
+    TREE "${sourceTreeDir}"
+    PREFIX "Source Files"
+    FILES ${filterSources}
+  )
+  set(filterSources ${fileSources})
+  list(FILTER filterSources INCLUDE REGEX "^${binaryDir}/")
+  source_group(
+    TREE "${binaryTreeDir}"
+    PREFIX "Generated Files"
+    FILES ${filterSources}
+  )
 endfunction()

@@ -2,6 +2,7 @@ name: macOS
 on:
   push:
     branches-ignore:
+      - '**/sources/**'
       - '**/windows/**'
       - '**/linux/**'
     paths-ignore:
@@ -15,8 +16,11 @@ on:
       - 'data/platform/windows/**'
       - 'docs/**'
       - '.clang-format'
-      - '*.md'
-      - '*.yml'
+      - '.git-blame-ignore-revs'
+      - '.git-properties'
+      - 'Changelog.txt'
+      - 'LICENSE'
+      - '**.md'
   pull_request:
     paths-ignore:
       - '.github/workflows/sources.yml'
@@ -29,8 +33,11 @@ on:
       - 'data/platform/windows/**'
       - 'docs/**'
       - '.clang-format'
-      - '*.md'
-      - '*.yml'
+      - '.git-blame-ignore-revs'
+      - '.git-properties'
+      - 'Changelog.txt'
+      - 'LICENSE'
+      - '**.md'
 
 jobs:
   bundle:

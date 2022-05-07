@@ -216,12 +216,17 @@ target_include_directories(wxFormBuilder_app
 target_link_libraries(wxFormBuilder_app
   PRIVATE
     wxFormBuilder::plugin-interface
-    wxWidgets::wxWidgets
     ticpp::ticpp
     Boost::headers
     md5::md5
     stack_trace::stack
 )
+if(TARGET wxWidgets::wxWidgets)
+  target_link_libraries(wxFormBuilder_app PUBLIC wxWidgets::wxWidgets)
+else()
+  target_link_libraries(wxFormBuilder_app PUBLIC ${wxWidgets_LIBRARIES})
+endif()
+
 
 set_target_properties(wxFormBuilder_app PROPERTIES
   MACOSX_BUNDLE_BUNDLE_NAME "${PROJECT_NAME}"
@@ -241,32 +246,7 @@ else()
 endif()
 
 set_target_properties(wxFormBuilder_app wxFormBuilder_app-revision PROPERTIES FOLDER "Main")
-get_target_property(sources wxFormBuilder_app SOURCES)
-set(filterSources ${sources})
-list(FILTER filterSources INCLUDE REGEX "\\.h(h|pp)?(\\.in)?$")
-list(FILTER filterSources EXCLUDE REGEX "^((${CMAKE_CURRENT_BINARY_DIR}/)|(\\.\\./))")
-source_group(
-  TREE "${CMAKE_CURRENT_SOURCE_DIR}"
-  PREFIX "Header Files"
-  FILES ${filterSources}
-)
-set(filterSources ${sources})
-list(FILTER filterSources INCLUDE REGEX "\\.c(c|xx|pp)?(\\.in)?$")
-list(FILTER filterSources EXCLUDE REGEX "^((${CMAKE_CURRENT_BINARY_DIR}/)|(\\.\\./))")
-source_group(
-  TREE "${CMAKE_CURRENT_SOURCE_DIR}"
-  PREFIX "Source Files"
-  FILES ${filterSources}
-)
-set(filterSources ${sources})
-list(FILTER filterSources INCLUDE REGEX "^${CMAKE_CURRENT_BINARY_DIR}/")
-source_group(
-  TREE "${CMAKE_CURRENT_BINARY_DIR}"
-  PREFIX "Generated Files"
-  FILES ${filterSources}
-)
-unset(filterSources)
-unset(sources)
+wxfb_target_source_groups(wxFormBuilder_app)
 
 # Use the same dependencies set like the plugins
 install(TARGETS wxFormBuilder_app
