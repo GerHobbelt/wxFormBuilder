@@ -40,8 +40,8 @@ ObjectType::ObjectType(wxString name, int id, bool hidden, bool item)
 
 void ObjectType::AddChildType(PObjectType type, int max, int aui_max)
 {
-    /*assert(max != 0);
-    assert(aui_max != 0);*/
+    /*ASSERT0(max != 0);
+    ASSERT0(aui_max != 0);*/
     m_childTypes.insert(ChildTypeMap::value_type(type, ChildCount(max, aui_max)));
 }
 
@@ -76,7 +76,7 @@ PObjectType ObjectType::GetChildType(unsigned int idx)
 {
     PObjectType result;
 
-    assert(idx < GetChildTypeCount());
+    ASSERT0(idx < GetChildTypeCount());
 
     unsigned int i = 0;
     ChildTypeMap::iterator it = m_childTypes.begin();

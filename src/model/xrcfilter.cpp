@@ -32,7 +32,7 @@
 
 PObjectBase XrcLoader::GetProject(ticpp::Document* xrcDoc)
 {
-    assert(m_objDb);
+    ASSERT0(m_objDb);
     LogDebug(wxT("[XrcFilter::GetProject]"));
 
     PObjectBase project(m_objDb->CreateObject("Project"));
