@@ -56,9 +56,13 @@ endif()
 
 if(MSVC)
   # Disable warnings about standard conformant code that is not conform to Microsoft standards
-  add_compile_definitions(_CRT_SECURE_NO_WARNINGS _SCL_SECURE_NO_WARNINGS)
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS _SCL_SECURE_NO_WARNINGS)
   # Without BOM the UTF-8 encoding doesn't get detected so enforce it
   add_compile_options(/source-charset:utf-8)
+  # Report the correct C++ version if supported
+  if(MSVC_VERSION GREATER_EQUAL 1914)
+    add_compile_options(/Zc:__cplusplus)
+  endif()
 endif()
 
 if(MSVC OR MINGW AND NOT MSYS)
@@ -132,9 +136,9 @@ if(WXFB_WXWIDGETS_MONO)
   list(APPEND wxWidgetsComponentsRequired mono)
 else()
   # TODO: OPTIONAL_COMPONENTS seems to be broken currently (at least on Linux), so make media a required component
-  list(APPEND wxWidgetsComponentsRequired media xrc richtext propgrid ribbon stc html aui xml net core base)
+  list(APPEND wxWidgetsComponentsRequired media xrc richtext propgrid ribbon stc html aui core net xml base)
   if(WXFB_WXWIDGETS_ENABLE_30)
-    list(APPEND wxWidgetsComponentsRequired adv)
+    list(PREPEND wxWidgetsComponentsRequired adv)
   endif()
 endif()
 find_package(wxWidgets ${wxWidgetsVersion} REQUIRED ${wxWidgetsComponentsRequired})
