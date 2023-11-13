@@ -1,3 +1,4 @@
+<!-- markdownlint-configure-file { "no-duplicate-header": { "siblings_only": true } } -->
 # Changelog
 
 All notable changes to this project will be documented in this file.
