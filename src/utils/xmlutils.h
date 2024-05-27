@@ -23,6 +23,45 @@ namespace XMLUtils
  */
 std::unique_ptr<tinyxml2::XMLDocument> LoadXMLFile(const wxString& path, bool collapseWhitespace = false);
 
+/**
+ * @brief Return string typed attribute
+ *
+ * @param element XML element node
+ * @param name Name of the attribute
+ * @param defaultValue Default value returned if attribute is missing
+ * @return Attribute value
+ */
+wxString StringAttribute(const tinyxml2::XMLElement* element, const wxString& name, const wxString& defaultValue = wxEmptyString);
+
+/**
+ * @brief Set string type attribute
+ *
+ * @param element XML element node
+ * @param name Name of the attribute
+ * @param value Value of the attribute
+ */
+void SetAttribute(tinyxml2::XMLElement* element, const wxString& name, const wxString& value);
+
+/**
+ * @brief Return text of the element
+ *
+ * @param element XML element node
+ * @param defaultValue Default value returned if element contains no text
+ * @param deepSearch If true, searches for the first text node, otherwise returns the text of the first child node.
+ *                   If the first child node is not a text node the default value will be returned.
+ * @return Text of the element
+ */
+wxString GetText(const tinyxml2::XMLElement* element, const wxString& defaultValue = wxEmptyString, bool deepSearch = false);
+
+/**
+ * @brief Set text of the element
+ *
+ * @param element XML element node
+ * @param value Text value of the node
+ * @param insertElement If true, the text is inserted as text node as last child element, otherwise a simple SetText() is used.
+ */
+void SetText(tinyxml2::XMLElement* element, const wxString& value, bool insertElement = false);
+
 }  // namespace XMLUtils
 
 #endif  // UTILS_XMLUTILS_H

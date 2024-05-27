@@ -27,4 +27,42 @@ std::unique_ptr<tinyxml2::XMLDocument> LoadXMLFile(const wxString& path, bool co
     return doc;
 }
 
+wxString StringAttribute(const tinyxml2::XMLElement* element, const wxString& name, const wxString& defaultValue)
+{
+    const auto* value = element->Attribute(name.utf8_str());
+
+    return (value ? wxString(value, wxConvUTF8) : defaultValue);
+}
+
+void SetAttribute(tinyxml2::XMLElement* element, const wxString& name, const wxString& value)
+{
+    element->SetAttribute(name.utf8_str(), value.utf8_str());
+}
+
+wxString GetText(const tinyxml2::XMLElement* element, const wxString& defaultValue, bool deepSearch)
+{
+    const char* value = nullptr;
+    if (!deepSearch) {
+        value = element->GetText();
+    } else {
+        for (const auto* node = element->FirstChild(); node; node = node->NextSibling()) {
+            if (node->ToText()) {
+                value = node->Value();
+                break;
+            }
+        }
+    }
+
+    return (value ? wxString(value, wxConvUTF8) : defaultValue);
+}
+
+void SetText(tinyxml2::XMLElement* element, const wxString& value, bool insertElement)
+{
+    if (!insertElement) {
+        element->SetText(value.utf8_str());
+    } else {
+        element->InsertNewText(value.utf8_str());
+    }
+}
+
 }  // namespace XMLUtils
