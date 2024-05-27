@@ -27,6 +27,7 @@
 
 #include "cpppanel.h"
 
+#include <wx/aui/auibook.h>
 #include <wx/fdrepdlg.h>
 #include <wx/stc/stc.h>
 
@@ -58,32 +59,29 @@ END_EVENT_TABLE()
 
 CppPanel::CppPanel(wxWindow* parent, int id) : wxPanel(parent, id)
 {
-    AppData()->AddHandler(this->GetEventHandler());
-    wxBoxSizer* top_sizer = new wxBoxSizer(wxVERTICAL);
+    auto* topSizer = new wxBoxSizer(wxVERTICAL);
 
     m_notebook = new wxAuiNotebook(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxAUI_NB_TOP);
     m_notebook->SetArtProvider(new AuiTabArt());
 
     m_cppPanel = new CodeEditor(m_notebook, wxID_ANY);
     InitStyledTextCtrl(m_cppPanel->GetTextCtrl());
-    m_notebook->InsertPage(0, m_cppPanel, wxT("cpp"), false);
-    m_notebook->SetPageBitmap(0, AppBitmaps::GetBitmap(wxT("cpp"), AppBitmaps::Size::Icon_Medium));
+    m_notebook->AddPage(m_cppPanel, _("cpp"), false);
+    m_notebook->SetPageBitmap(m_notebook->GetPageCount() - 1, AppBitmaps::GetBitmap("cpp", AppBitmaps::Size::Icon_Medium));
 
     m_hPanel = new CodeEditor(m_notebook, wxID_ANY);
     InitStyledTextCtrl(m_hPanel->GetTextCtrl());
-    m_notebook->InsertPage(1, m_hPanel, wxT("h"), false);
-    m_notebook->SetPageBitmap(1, AppBitmaps::GetBitmap(wxT("h"), AppBitmaps::Size::Icon_Medium));
+    m_notebook->AddPage(m_hPanel, _("h"), false);
+    m_notebook->SetPageBitmap(m_notebook->GetPageCount() - 1, AppBitmaps::GetBitmap("h", AppBitmaps::Size::Icon_Medium));
 
-    top_sizer->Add(m_notebook, 1, wxEXPAND, 0);
+    topSizer->Add(m_notebook, 1, wxEXPAND, 0);
 
-    SetSizer(top_sizer);
-    SetAutoLayout(true);
-    // top_sizer->SetSizeHints( this );
-    top_sizer->Fit(this);
-    top_sizer->Layout();
+    SetSizer(topSizer);
 
-    m_hCW = PTCCodeWriter(new TCCodeWriter(m_hPanel->GetTextCtrl()));
-    m_cppCW = PTCCodeWriter(new TCCodeWriter(m_cppPanel->GetTextCtrl()));
+    m_hCW = std::make_shared<TCCodeWriter>(m_hPanel->GetTextCtrl());
+    m_cppCW = std::make_shared<TCCodeWriter>(m_cppPanel->GetTextCtrl());
+
+    AppData()->AddHandler(this->GetEventHandler());
 }
 
 CppPanel::~CppPanel()
@@ -152,37 +150,12 @@ void CppPanel::InitStyledTextCtrl(wxStyledTextCtrl* stc)
 
 void CppPanel::OnFind(wxFindDialogEvent& event)
 {
-    wxAuiNotebook* languageBook = wxDynamicCast(this->GetParent(), wxAuiNotebook);
-    if (NULL == languageBook) {
+    auto* page = m_notebook->GetCurrentPage();
+    if (!page) {
         return;
     }
 
-    int languageSelection = languageBook->GetSelection();
-    if (languageSelection < 0) {
-        return;
-    }
-
-    wxString languageText = languageBook->GetPageText(languageSelection);
-    if (wxT("C++") != languageText) {
-        return;
-    }
-
-    wxAuiNotebook* notebook = wxDynamicCast(m_cppPanel->GetParent(), wxAuiNotebook);
-    if (NULL == notebook) {
-        return;
-    }
-
-    int selection = notebook->GetSelection();
-    if (selection < 0) {
-        return;
-    }
-
-    wxString text = notebook->GetPageText(selection);
-    if (wxT("cpp") == text) {
-        m_cppPanel->GetEventHandler()->ProcessEvent(event);
-    } else if (wxT("h") == text) {
-        m_hPanel->GetEventHandler()->ProcessEvent(event);
-    }
+    page->GetEventHandler()->ProcessEvent(event);
 }
 
 void CppPanel::OnPropertyModified(wxFBPropertyEvent& event)
@@ -273,7 +246,7 @@ void CppPanel::OnCodeGeneration(wxFBEvent& event)
     }
 
     // Get First ID from Project File
-    unsigned int firstID = 1000;
+    int firstID = wxID_HIGHEST;
     PProperty pFirstID = project->GetProperty(wxT("first_id"));
     if (pFirstID) {
         firstID = pFirstID->GetValueAsInteger();
