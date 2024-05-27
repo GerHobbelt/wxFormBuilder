@@ -130,6 +130,7 @@ typedef enum {
     PT_ERROR,
     PT_BOOL,
     PT_TEXT,
+    PT_TEXT_ML,
     PT_INT,
     PT_UINT,
     PT_BITLIST,

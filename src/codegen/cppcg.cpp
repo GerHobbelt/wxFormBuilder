@@ -117,6 +117,7 @@ wxString CppTemplateParser::ValueToCode(PropertyType type, wxString value)
         case PT_CLASS:
         case PT_MACRO:
         case PT_TEXT:
+        case PT_TEXT_ML:
         case PT_OPTION:
         case PT_EDIT_OPTION:
         case PT_FLOAT:
@@ -255,7 +256,10 @@ wxString CppTemplateParser::ValueToCode(PropertyType type, wxString value)
                 if (rid.StartsWith(wxT("gtk-")))
                     rid = wxT("wxT(\"") + rid + wxT("\")");
 
-                result = wxT("wxArtProvider::GetBitmap( ") + rid + wxT(", ") + path.AfterFirst(wxT(':')) + wxT(" )");
+                result = wxT("wxArtProvider::GetBitmap( wxASCII_STR(") + rid + wxT("), wxASCII_STR(") + path.AfterFirst(wxT(':')) + wxT(") )");
+            } else if (source == _("Load From SVG Resource")) {
+                result.Printf( wxT("wxBitmapBundle::FromSVGResource( wxT(\"%s\"), {%i, %i} )"),
+                               path, icoSize.GetWidth(), icoSize.GetHeight());
             }
             break;
         }
@@ -486,12 +490,12 @@ bool CppCodeGenerator::GenerateCode(PObjectBase project)
 
     bool useEnum = false;
 
-    PProperty useEnumProperty = project->GetProperty(wxT("use_enum"));
+    PProperty useEnumProperty = project->GetProperty("cpp_use_enum");
     if (useEnumProperty && useEnumProperty->GetValueAsInteger())
         useEnum = true;
 
     m_useArrayEnum = false;
-    const auto& useArrayEnumProperty = project->GetProperty(wxT("use_array_enum"));
+    const auto& useArrayEnumProperty = project->GetProperty("cpp_use_array_enum");
     if (useArrayEnumProperty && useArrayEnumProperty->GetValueAsInteger()) {
         m_useArrayEnum = true;
     }
@@ -501,8 +505,8 @@ bool CppCodeGenerator::GenerateCode(PObjectBase project)
     if (i18nProperty && i18nProperty->GetValueAsInteger())
         m_i18n = true;
 
-    m_useConnect = !(_("table") == project->GetPropertyAsString(_("event_generation")));
-    m_disconnectEvents = (project->GetPropertyAsInteger(_("disconnect_events")) != 0);
+    m_useConnect = !(_("table") == project->GetPropertyAsString("cpp_event_generation"));
+    m_disconnectEvents = (project->GetPropertyAsInteger("cpp_disconnect_events") != 0);
 
     m_header->Clear();
     m_source->Clear();
@@ -565,7 +569,7 @@ bool CppCodeGenerator::GenerateCode(PObjectBase project)
     }
 
     // class decoration
-    PProperty propClassDecoration = project->GetProperty(wxT("class_decoration"));
+    PProperty propClassDecoration = project->GetProperty("cpp_class_decoration");
     wxString classDecoration;
     if (propClassDecoration) {
         // get the decoration to be used by GenClassDeclaration
@@ -630,7 +634,7 @@ bool CppCodeGenerator::GenerateCode(PObjectBase project)
     m_source->WriteLn(code);
 
     // namespace
-    PProperty propNamespace = project->GetProperty(wxT("namespace"));
+    PProperty propNamespace = project->GetProperty("cpp_namespace");
     wxArrayString namespaceArray;
     if (propNamespace) {
         namespaceArray = propNamespace->GetValueAsArrayString();
@@ -1654,7 +1658,7 @@ void CppCodeGenerator::GenDefines(PObjectBase project)
     }
 
     unsigned int id = m_firstID;
-    if (id < 1000) {
+    if (id < wxID_HIGHEST) {
         wxLogWarning(wxT("First ID is Less than 1000"));
     }
     for (it = macros.begin(); it != macros.end(); it++) {

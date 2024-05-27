@@ -25,9 +25,10 @@
 
 #include "database.h"
 
-#include <ticpp.h>
 #include <wx/dir.h>
 #include <wx/filename.h>
+
+#include <common/xmlutils.h>
 
 #include "model/objectbase.h"
 #include "rad/bitmaps.h"
@@ -36,7 +37,6 @@
 #include "utils/stringutils.h"
 #include "utils/typeconv.h"
 #include "utils/wxfbexception.h"
-#include "utils/xmlutils.h"
 
 //#define DEBUG_PRINT(x) cout << x
 
@@ -444,88 +444,6 @@ void ObjectDatabase::ResetObjectCounters()
 
 ///////////////////////////////////////////////////////////////////////
 
-PObjectBase ObjectDatabase::CreateObject(ticpp::Element* xml_obj, PObjectBase parent)
-{
-    try {
-        std::string class_name;
-        xml_obj->GetAttribute(CLASS_TAG, &class_name, false);
-
-        PObjectBase newobject = CreateObject(class_name, parent);
-
-        // It is possible the CreateObject returns an "item" containing the object, e.g. SizerItem or SplitterItem
-        // If that is the case, reassign "object" to the actual object
-        PObjectBase object = newobject;
-        if (object && object->GetChildCount() > 0) {
-            object = object->GetChild(0);
-        }
-
-        if (object) {
-            // Get the state of expansion in the object tree
-            bool expanded;
-            xml_obj->GetAttributeOrDefault(EXPANDED_TAG, &expanded, true);
-            object->SetExpanded(expanded);
-
-            // Load the properties
-            ticpp::Element* xml_prop = xml_obj->FirstChildElement(PROPERTY_TAG, false);
-            while (xml_prop) {
-                std::string prop_name;
-                xml_prop->GetAttribute(NAME_TAG, &prop_name, false);
-                PProperty prop = object->GetProperty(_WXSTR(prop_name));
-
-                if (prop)  // does the property exist
-                {
-                    // load the value
-                    prop->SetValue(_WXSTR(xml_prop->GetText(false)));
-                } else {
-                    std::string value = xml_prop->GetText(false);
-                    if (!value.empty()) {
-                        wxLogError(
-                          wxT("The property named \"%s\" of class \"%s\" is not supported by this version of "
-                              "wxFormBuilder.\n") wxT("If your project file was just converted from an older version, "
-                                                      "then the conversion was not complete.\n")
-                            wxT("Otherwise, this project is from a newer version of wxFormBuilder.\n\n")
-                              wxT("The property's value is: %s\n") wxT("If you save this project, YOU WILL LOSE DATA"),
-                          _WXSTR(prop_name), _WXSTR(class_name), _WXSTR(value));
-                    }
-                }
-
-                xml_prop = xml_prop->NextSiblingElement(PROPERTY_TAG, false);
-            }
-
-            // load the event handlers
-            ticpp::Element* xml_event = xml_obj->FirstChildElement(EVENT_TAG, false);
-            while (xml_event) {
-                std::string event_name;
-                xml_event->GetAttribute(NAME_TAG, &event_name, false);
-                PEvent event = object->GetEvent(_WXSTR(event_name));
-                if (event) {
-                    event->SetValue(_WXSTR(xml_event->GetText(false)));
-                }
-
-                xml_event = xml_event->NextSiblingElement(EVENT_TAG, false);
-            }
-
-
-            if (parent) {
-                // set up parent/child relationship
-                parent->AddChild(newobject);
-                newobject->SetParent(parent);
-            }
-
-            // create the children
-            ticpp::Element* child = xml_obj->FirstChildElement(OBJECT_TAG, false);
-            while (child) {
-                CreateObject(child, object);
-                child = child->NextSiblingElement(OBJECT_TAG, false);
-            }
-        }
-
-        return newobject;
-    } catch (ticpp::Exception&) {
-        return PObjectBase();
-    }
-}
-
 PObjectBase ObjectDatabase::CreateObject(const tinyxml2::XMLElement* object, PObjectBase parentObject)
 {
     auto className = XMLUtils::StringAttribute(object, CLASS_TAG);
@@ -709,6 +627,12 @@ void ObjectDatabase::LoadPlugins(PwxFBManager manager)
 void ObjectDatabase::SetupPackage(const wxString& file, [[maybe_unused]] const wxString& path, PwxFBManager manager)
 {
     auto doc = XMLUtils::LoadXMLFile(file, true);
+    if (!doc) {
+        THROW_WXFBEX(wxString::Format(_("%s: Failed to open file"), file))
+    }
+    if (doc->Error()) {
+        THROW_WXFBEX(doc->ErrorStr())
+    }
     const auto* root = doc->FirstChildElement(PACKAGE_TAG);
     if (!root) {
         THROW_WXFBEX(wxString::Format(_("%s: Invalid root node"), file))
@@ -798,11 +722,14 @@ bool ObjectDatabase::HasCppProperties(wxString type)
 
 void ObjectDatabase::LoadCodeGen(const wxString& file)
 {
-    std::unique_ptr<tinyxml2::XMLDocument> doc;
-    try {
-        doc = XMLUtils::LoadXMLFile(file, true);
-    } catch (wxFBException& ex) {
-        wxLogError(ex.what());
+    auto doc = XMLUtils::LoadXMLFile(file, true);
+    if (!doc) {
+        wxLogError(_("%s: Failed to open file"), file);
+
+        return;
+    }
+    if (doc->Error()) {
+        wxLogError(doc->ErrorStr());
 
         return;
     }
@@ -868,6 +795,12 @@ void ObjectDatabase::LoadCodeGen(const wxString& file)
 PObjectPackage ObjectDatabase::LoadPackage(const wxString& file, const wxString& iconPath)
 {
     auto doc = XMLUtils::LoadXMLFile(file, true);
+    if (!doc) {
+        THROW_WXFBEX(wxString::Format(_("%s: Failed to open file"), file))
+    }
+    if (doc->Error()) {
+        THROW_WXFBEX(doc->ErrorStr())
+    }
     const auto* root = doc->FirstChildElement(PACKAGE_TAG);
     if (!root) {
         THROW_WXFBEX(wxString::Format(_("%s: Invalid root node"), file))
@@ -1196,6 +1129,7 @@ void ObjectDatabase::InitPropertyTypes()
 {
     PT(wxT("bool"), PT_BOOL);
     PT(wxT("text"), PT_TEXT);
+    PT(wxT("text_ml"), PT_TEXT_ML);
     PT(wxT("int"), PT_INT);
     PT(wxT("uint"), PT_UINT);
     PT(wxT("bitlist"), PT_BITLIST);
@@ -1223,11 +1157,14 @@ void ObjectDatabase::InitPropertyTypes()
 bool ObjectDatabase::LoadObjectTypes()
 {
     const auto filepath = m_xmlPath + "objtypes.xml";
-    std::unique_ptr<tinyxml2::XMLDocument> doc;
-    try {
-        doc = XMLUtils::LoadXMLFile(filepath, true);
-    } catch (wxFBException& ex) {
-        wxLogError(ex.what());
+    auto doc = XMLUtils::LoadXMLFile(filepath, true);
+    if (!doc) {
+        wxLogError(_("%s: Failed to open file"), filepath);
+
+        return false;
+    }
+    if (doc->Error()) {
+        wxLogError(doc->ErrorStr());
 
         return false;
     }

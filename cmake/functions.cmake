@@ -206,8 +206,7 @@ function(wxfb_create_target_wxwidgets)
 
   if(NOT TARGET wxWidgets::wxWidgets)
     message(DEBUG "Creating target wxWidgets::wxWidgets")
-    add_library(wxWidgets_wxWidgets INTERFACE)
-    add_library(wxWidgets::wxWidgets ALIAS wxWidgets_wxWidgets)
+    add_library(wxWidgets::wxWidgets INTERFACE IMPORTED GLOBAL)
 
     # To detect if CONFIG mode or MODULE mode was used, test for the presence of all required components
     set(targets "")
@@ -222,43 +221,54 @@ function(wxfb_create_target_wxwidgets)
     list(LENGTH targets targetCount)
     if(targetCount GREATER 0)
       message(DEBUG "wxWidgets targets: ${targets}")
-      target_link_libraries(wxWidgets_wxWidgets INTERFACE ${targets})
+      target_link_libraries(wxWidgets::wxWidgets INTERFACE ${targets})
     else()
       message(DEBUG "wxWidgets_INCLUDE_DIRS: ${wxWidgets_INCLUDE_DIRS}")
       if(wxWidgets_INCLUDE_DIRS)
         if(wxWidgets_INCLUDE_DIRS_NO_SYSTEM)
-          target_include_directories(wxWidgets_wxWidgets INTERFACE ${wxWidgets_INCLUDE_DIRS})
+          target_include_directories(wxWidgets::wxWidgets INTERFACE ${wxWidgets_INCLUDE_DIRS})
         else()
-          target_include_directories(wxWidgets_wxWidgets SYSTEM INTERFACE ${wxWidgets_INCLUDE_DIRS})
+          target_include_directories(wxWidgets::wxWidgets SYSTEM INTERFACE ${wxWidgets_INCLUDE_DIRS})
         endif()
       endif()
       message(DEBUG "wxWidgets_LIBRARY_DIRS: ${wxWidgets_LIBRARY_DIRS}")
       if(wxWidgets_LIBRARY_DIRS)
-        target_link_directories(wxWidgets_wxWidgets INTERFACE ${wxWidgets_LIBRARY_DIRS})
+        target_link_directories(wxWidgets::wxWidgets INTERFACE ${wxWidgets_LIBRARY_DIRS})
       endif()
       message(DEBUG "wxWidgets_DEFINITIONS: ${wxWidgets_DEFINITIONS}")
       if(wxWidgets_DEFINITIONS)
-        target_compile_definitions(wxWidgets_wxWidgets INTERFACE ${wxWidgets_DEFINITIONS})
+        target_compile_definitions(wxWidgets::wxWidgets INTERFACE ${wxWidgets_DEFINITIONS})
       endif()
       message(DEBUG "wxWidgets_DEFINITIONS_DEBUG: ${wxWidgets_DEFINITIONS_DEBUG}")
       if(wxWidgets_DEFINITIONS_DEBUG)
         list(TRANSFORM wxWidgets_DEFINITIONS_DEBUG REPLACE [[^(.+)$]] [[$<$<CONFIG:Debug>:\1>]] OUTPUT_VARIABLE wxWidgets_DEFINITIONS_DEBUG_GENEX)
         message(DEBUG "wxWidgets_DEFINITIONS_DEBUG_GENEX: ${wxWidgets_DEFINITIONS_DEBUG_GENEX}")
-        target_compile_definitions(wxWidgets_wxWidgets INTERFACE ${wxWidgets_DEFINITIONS_DEBUG_GENEX})
+        target_compile_definitions(wxWidgets::wxWidgets INTERFACE ${wxWidgets_DEFINITIONS_DEBUG_GENEX})
         unset(wxWidgets_DEFINITIONS_DEBUG_GENEX)
       endif()
       message(DEBUG "wxWidgets_CXX_FLAGS: ${wxWidgets_CXX_FLAGS}")
       if(wxWidgets_CXX_FLAGS)
-        target_compile_options(wxWidgets_wxWidgets INTERFACE ${wxWidgets_CXX_FLAGS})
+        target_compile_options(wxWidgets::wxWidgets INTERFACE ${wxWidgets_CXX_FLAGS})
       endif()
       message(DEBUG "wxWidgets_LIBRARIES: ${wxWidgets_LIBRARIES}")
       if(wxWidgets_LIBRARIES)
-        target_link_libraries(wxWidgets_wxWidgets INTERFACE ${wxWidgets_LIBRARIES})
+        target_link_libraries(wxWidgets::wxWidgets INTERFACE ${wxWidgets_LIBRARIES})
       endif()
     endif()
 
     if(arg_DISABLE_GUI)
-      target_compile_definitions(wxWidgets_wxWidgets INTERFACE wxUSE_GUI=0)
+      target_compile_definitions(wxWidgets::wxWidgets INTERFACE wxUSE_GUI=0)
+    endif()
+  else()
+    # Assume that if the target is not global it was created by the find module and is an imported library (== not read-only)
+    get_target_property(isGlobal wxWidgets::wxWidgets IMPORTED_GLOBAL)
+    if(NOT isGlobal)
+      message(DEBUG "Promoting target wxWidgets::wxWidgets")
+      set_target_properties(wxWidgets::wxWidgets PROPERTIES IMPORTED_GLOBAL TRUE)
+
+      if(arg_DISABLE_GUI)
+        target_compile_definitions(wxWidgets::wxWidgets INTERFACE wxUSE_GUI=0)
+      endif()
     endif()
   endif()
 
@@ -336,46 +346,46 @@ function(wxfb_add_plugin PLUGIN_NAME)
     set(stageResourceDestination "")
   endif()
 
-  add_library(wxFormBuilder_${PLUGIN_NAME} MODULE)
-  add_library(wxFormBuilder::${PLUGIN_NAME} ALIAS wxFormBuilder_${PLUGIN_NAME})
-  set_target_properties(wxFormBuilder_${PLUGIN_NAME} PROPERTIES
+  add_library(wxFormBuilder_plugin_${PLUGIN_NAME} MODULE)
+  add_library(wxFormBuilder::plugin_${PLUGIN_NAME} ALIAS wxFormBuilder_plugin_${PLUGIN_NAME})
+  set_target_properties(wxFormBuilder_plugin_${PLUGIN_NAME} PROPERTIES
     OUTPUT_NAME "${PLUGIN_NAME}"
   )
   if(APPLE)
     # The current plugin loader code requires this extension
     # TODO: Setting CMAKE_SHARED_MODULE_SUFFIX inside this function has no effect, setting it
     #       in the toplevel CMake file has. Setting the property directly does also work.
-    set_target_properties(wxFormBuilder_${PLUGIN_NAME} PROPERTIES SUFFIX ".dylib")
+    set_target_properties(wxFormBuilder_plugin_${PLUGIN_NAME} PROPERTIES SUFFIX ".dylib")
   endif()
 
-  target_sources(wxFormBuilder_${PLUGIN_NAME} PRIVATE "${PLUGIN_DIRECTORY}/${PLUGIN_NAME}.cpp")
+  target_sources(wxFormBuilder_plugin_${PLUGIN_NAME} PRIVATE "${PLUGIN_DIRECTORY}/${PLUGIN_NAME}.cpp")
   if(DEFINED PLUGIN_SOURCES)
-    target_sources(wxFormBuilder_${PLUGIN_NAME} PRIVATE ${PLUGIN_SOURCES})
+    target_sources(wxFormBuilder_plugin_${PLUGIN_NAME} PRIVATE ${PLUGIN_SOURCES})
   endif()
 
   if(DEFINED PLUGIN_DEFINITIONS)
-    target_compile_definitions(wxFormBuilder_${PLUGIN_NAME} PRIVATE ${PLUGIN_DEFINITIONS})
+    target_compile_definitions(wxFormBuilder_plugin_${PLUGIN_NAME} PRIVATE ${PLUGIN_DEFINITIONS})
   endif()
 
-  target_link_libraries(wxFormBuilder_${PLUGIN_NAME} PUBLIC wxFormBuilder::plugin-interface)
+  target_link_libraries(wxFormBuilder_plugin_${PLUGIN_NAME} PUBLIC wxFormBuilder::sdk_plugin-interface)
   if(DEFINED PLUGIN_LIBRARIES)
-    target_link_libraries(wxFormBuilder_${PLUGIN_NAME} PRIVATE ${PLUGIN_LIBRARIES})
+    target_link_libraries(wxFormBuilder_plugin_${PLUGIN_NAME} PRIVATE ${PLUGIN_LIBRARIES})
   endif()
 
   if(APPLE)
-    set_target_properties(wxFormBuilder_${PLUGIN_NAME} PROPERTIES INSTALL_RPATH "@loader_path/../Frameworks")
+    set_target_properties(wxFormBuilder_plugin_${PLUGIN_NAME} PROPERTIES INSTALL_RPATH "@loader_path/../Frameworks")
   else()
-    set_target_properties(wxFormBuilder_${PLUGIN_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN/..")
+    set_target_properties(wxFormBuilder_plugin_${PLUGIN_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN/..")
   endif()
 
-  set_target_properties(wxFormBuilder_${PLUGIN_NAME} PROPERTIES FOLDER "Plugins/${PLUGIN_NAME}")
-  wxfb_target_source_groups(wxFormBuilder_${PLUGIN_NAME} STRIP_PREFIX "${PLUGIN_DIRECTORY}")
+  set_target_properties(wxFormBuilder_plugin_${PLUGIN_NAME} PROPERTIES FOLDER "Plugins/${PLUGIN_NAME}")
+  wxfb_target_source_groups(wxFormBuilder_plugin_${PLUGIN_NAME} STRIP_PREFIX "${PLUGIN_DIRECTORY}")
 
   # Do not install the RUNTIME_DEPENDENCIES here, because of the currently defined install locations
   # they would get installed next to the plugin. Instead, register the dependencies in a RUNTIME_DEPENDENCY_SET
   # and let the main application install them. This way the dependencies get installed into the locations
   # defined by the main application.
-  install(TARGETS wxFormBuilder_${PLUGIN_NAME}
+  install(TARGETS wxFormBuilder_plugin_${PLUGIN_NAME}
     RUNTIME_DEPENDENCY_SET wxFormBuilder_dependencies
     RUNTIME
       DESTINATION ${runtimeDestination}
@@ -383,7 +393,7 @@ function(wxfb_add_plugin PLUGIN_NAME)
       DESTINATION ${libraryDestination}
   )
 
-  wxfb_target_definitions(wxFormBuilder_${PLUGIN_NAME}
+  wxfb_target_definitions(wxFormBuilder_plugin_${PLUGIN_NAME}
     INPUT_DIRECTORY "${PLUGIN_DIRECTORY}"
     OUTPUT_DIRECTORY "${stageResourceDestination}"
     INSTALL_DIRECTORY "${resourceDestination}"
@@ -393,7 +403,7 @@ function(wxfb_add_plugin PLUGIN_NAME)
   )
 
   if(DEFINED PLUGIN_ICONS)
-    wxfb_target_resources(wxFormBuilder_${PLUGIN_NAME}
+    wxfb_target_resources(wxFormBuilder_plugin_${PLUGIN_NAME}
       INPUT_DIRECTORY "${PLUGIN_DIRECTORY}"
       OUTPUT_DIRECTORY "${stageResourceDestination}"
       INSTALL_DIRECTORY "${resourceDestination}"
@@ -704,28 +714,28 @@ function(wxfb_target_source_groups arg_TARGET)
     endif()
   endforeach()
 
-  set(filterSources ${sourceFiles})
+  set(filterSources "${sourceFiles}")
   list(FILTER filterSources INCLUDE REGEX "/.+\\.h(h|pp)?$")
   source_group(
     TREE "${sourceTreeDir}"
     PREFIX "Header Files"
     FILES ${filterSources}
   )
-  set(filterSources ${sourceFiles})
+  set(filterSources "${sourceFiles}")
   list(FILTER filterSources INCLUDE REGEX "/.+\\.h(h|pp)?\\.in$")
   source_group(
     TREE "${sourceTreeDir}"
     PREFIX "Header Templates"
     FILES ${filterSources}
   )
-  set(filterSources ${sourceFiles})
+  set(filterSources "${sourceFiles}")
   list(FILTER filterSources INCLUDE REGEX "/.+\\.c(c|xx|pp)?$")
   source_group(
     TREE "${sourceTreeDir}"
     PREFIX "Source Files"
     FILES ${filterSources}
   )
-  set(filterSources ${sourceFiles})
+  set(filterSources "${sourceFiles}")
   list(FILTER filterSources INCLUDE REGEX "/.+\\.c(c|xx|pp)?\\.in$")
   source_group(
     TREE "${sourceTreeDir}"
@@ -733,7 +743,7 @@ function(wxfb_target_source_groups arg_TARGET)
     FILES ${filterSources}
   )
 
-  set(filterSources ${binaryFiles})
+  set(filterSources "${binaryFiles}")
   source_group(
     TREE "${binaryTreeDir}"
     PREFIX "Generated Files"

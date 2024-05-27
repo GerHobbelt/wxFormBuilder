@@ -25,7 +25,8 @@
 
 #include "appdata.h"
 
-#include <ticpp.h>
+#include <cstring>
+
 #include <wx/clipbrd.h>
 #include <wx/ffile.h>
 #include <wx/filename.h>
@@ -34,6 +35,8 @@
 #include <wx/fs_mem.h>
 #include <wx/richmsgdlg.h>
 #include <wx/tokenzr.h>
+
+#include <common/xmlutils.h>
 
 #include "codegen/codewriter.h"
 #include "codegen/cppcg.h"
@@ -46,9 +49,7 @@
 #include "rad/wxfbevent.h"
 #include "rad/wxfbmanager.h"
 #include "rad/xrcpreview/xrcpreview.h"
-#include "utils/stringutils.h"
 #include "utils/typeconv.h"
-#include "utils/xmlutils.h"
 #include "utils/wxfbexception.h"
 #include "utils/wxfbipc.h"
 
@@ -469,8 +470,8 @@ ApplicationData::ApplicationData(const wxString& rootdir) :
   m_manager(new wxFBManager),
   m_ipc(new wxFBIPC),
   m_fbpVerMajor(1),
-  // TODO: Update to 17 for next release
-  m_fbpVerMinor(16)
+  // TODO: Update for next release
+  m_fbpVerMinor(17)
 {
 #ifdef __WXFB_DEBUG__
     // wxLog* log = wxLog::SetActiveTarget( NULL );
@@ -1142,181 +1143,158 @@ void ApplicationData::SaveProject(const wxString& filename)
         return;
     }
 
-    try {
-        ticpp::Document doc;
-        m_project->Serialize(&doc);
-        doc.SaveFile(std::string(filename.mb_str(wxConvFile)));
+    tinyxml2::XMLDocument doc(false, tinyxml2::PRESERVE_WHITESPACE);
+    auto* prolog = doc.NewDeclaration("xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"");
+    auto* root = doc.NewElement("wxFormBuilder_Project");
+    doc.InsertEndChild(prolog);
+    doc.InsertEndChild(root);
 
-        m_projectFile = filename;
-        SetProjectPath(::wxPathOnly(filename));
-        m_modFlag = false;
-        m_cmdProc.SetSavePoint();
-        NotifyProjectSaved();
-    } catch (ticpp::Exception& ex) {
-        wxString message = _WXSTR(ex.m_details);
+    auto* version = doc.NewElement("FileVersion");
+    version->SetAttribute("major", static_cast<int>(AppData()->m_fbpVerMajor));
+    version->SetAttribute("minor", static_cast<int>(AppData()->m_fbpVerMinor));
+    root->InsertEndChild(version);
 
-        if (message.empty()) {
-            message = wxString(ex.m_details.c_str(), wxConvFile);
-        }
+    auto* project = doc.NewElement("");
+    m_project->Serialize(project);
+    root->InsertEndChild(project);
 
-        THROW_WXFBEX(message)
+    wxFileName name(filename);
+    if (!XMLUtils::SaveXMLFile(name.GetFullPath(), doc)) {
+        THROW_WXFBEX(_("Failed to write to file: ") << name.GetFullPath())
     }
+
+    m_projectFile = name.GetFullPath();
+    SetProjectPath(name.GetPath());
+    m_modFlag = false;
+    m_cmdProc.SetSavePoint();
+    NotifyProjectSaved();
 }
 
 bool ApplicationData::LoadProject(const wxString& file, bool justGenerate)
-
 {
-    LogDebug(wxT("LOADING"));
-
-    if (!wxFileName::FileExists(file)) {
-        wxLogError(wxT("This file does not exist: %s"), file);
+    wxFileName filename(file);
+    if (!filename.FileExists()) {
+        wxLogError(_("File does not exist: %s"), file);
         return false;
     }
 
-    if (!justGenerate) {
-        if (!m_ipc->VerifySingleInstance(file)) {
+    if (!justGenerate && !m_ipc->VerifySingleInstance(file)) {
+        return false;
+    }
+
+    auto doc = XMLUtils::LoadXMLFile(filename.GetFullPath(), false);
+    if (!doc) {
+        wxLogError(_("%s: Failed to open file"), filename.GetFullPath());
+        return false;
+    }
+    if (doc->Error()) {
+        wxLogError(doc->ErrorStr());
+        return false;
+    }
+    const auto* root = doc->FirstChildElement();
+    if (!root) {
+        wxLogError(_("%s: Missing root node"), file);
+        return false;
+    }
+    const auto* rootName = root->Name();
+    if (!rootName) {
+        rootName = "";
+    }
+
+    int versionMajor = 0;
+    int versionMinor = 0;
+    if (std::strcmp(rootName, "wxFormBuilder_Project") == 0) {
+        const auto* version = root->FirstChildElement("FileVersion");
+        if (!version) {
+            wxLogError(_("%s: Invalid version node"), file);
+            return false;
+        }
+        versionMajor = version->IntAttribute("major", versionMajor);
+        versionMinor = version->IntAttribute("minor", versionMinor);
+    } else if (std::strcmp(rootName, "object") != 0) {
+        wxLogError(_("%s: Invalid root node"), file);
+        return false;
+    }
+
+    enum class VersionState {
+        OLDER = -1,
+        EQUAL,
+        NEWER,
+    };
+    auto versionState = VersionState::EQUAL;
+    if (versionMajor == m_fbpVerMajor) {
+        if (versionMinor < m_fbpVerMinor) {
+            versionState = VersionState::OLDER;
+        } else if (versionMinor > m_fbpVerMinor) {
+            versionState = VersionState::NEWER;
+        }
+    } else {
+        if (versionMajor < m_fbpVerMajor) {
+            versionState = VersionState::OLDER;
+        } else if (versionMajor > m_fbpVerMajor) {
+            versionState = VersionState::NEWER;
+        }
+    }
+    if (versionState == VersionState::NEWER) {
+        if (justGenerate) {
+            wxLogError("This project file version is newer than this version of wxFormBuilder.\n");
+        } else {
+            wxMessageBox(
+                _(
+                    "This project file version is newer than this version of wxFormBuilder.\n"
+                    "The file cannot be opened.\n\n"
+                    "Please download an new wxFormBuilder version version from http://www.wxformbuilder.org"
+                ),
+                _("New Project File Version"),
+                wxICON_ERROR
+            );
+        }
+        return false;
+    }
+    if (versionState == VersionState::OLDER) {
+        if (justGenerate) {
+            wxLogError("This project file version is outdated, update the file by using the GUI mode first.\n");
+        } else {
+            wxMessageBox(
+                _(
+                    "This project file version is older than this version of wxFormBuilder,\n"
+                    "the file version will get updated during loading.\n\n"
+                    "WARNING: Saving the project file will prevent older versions of wxFormBuilder to open the file!"
+                ),
+                _("Old Project File Version")
+            );
+        }
+
+        if (ConvertProject(doc.get(), file, versionMajor, versionMinor)) {
+            root = doc->FirstChildElement();
+        } else {
+            wxLogError(_("%s: Failed to convert project"), file);
             return false;
         }
     }
 
+    const auto* project = root->FirstChildElement("object");
+    if (!project) {
+        wxLogError(_("%s: Invalid project node"), file);
+        return false;
+    }
+
+    m_objDb->ResetObjectCounters();
+
     try {
-        ticpp::Document doc;
-        XMLUtils::LoadXMLFile(doc, false, file);
-
-        ticpp::Element* root = doc.FirstChildElement();
-
-        m_objDb->ResetObjectCounters();
-
-        int fbpVerMajor = 0;
-        int fbpVerMinor = 0;
-
-        if (root->Value() != std::string("object")) {
-            try {
-                ticpp::Element* fileVersion = root->FirstChildElement("FileVersion");
-                fileVersion->GetAttributeOrDefault("major", &fbpVerMajor, 0);
-                fileVersion->GetAttributeOrDefault("minor", &fbpVerMinor, 0);
-            } catch (ticpp::Exception&) {
-            }
-        }
-
-        bool older = false;
-        bool newer = false;
-
-        if (m_fbpVerMajor == fbpVerMajor) {
-            older = (fbpVerMinor < m_fbpVerMinor);
-            newer = (fbpVerMinor > m_fbpVerMinor);
-        } else {
-            older = (fbpVerMajor < m_fbpVerMajor);
-            newer = (fbpVerMajor > m_fbpVerMajor);
-        }
-
-        if (newer) {
-            if (justGenerate) {
-                wxLogError(wxT("This project file is newer than this version of wxFormBuilder.\n"));
-            } else {
-                wxMessageBox(
-                  wxT("This project file is newer than this version of wxFormBuilder.\n")
-                    wxT("It cannot be opened.\n\n")
-                      wxT("Please download an updated version from http://www.wxFormBuilder.org"),
-                  _("New Version"), wxICON_ERROR);
-            }
-            return false;
-        }
-
-        if (older) {
-            if (justGenerate) {
-                wxLogError(wxT("This project file is out of date.  Update your .fbp before using --generate"));
-                return false;
-            }
-
-            wxMessageBox(
-              _("This project file is using an older file format, it will be updated during loading.\n\n"
-                "WARNING: Saving the project will update the format of the project file on disk!"),
-              _("Older file format"));
-
-            if (ConvertProject(doc, file, fbpVerMajor, fbpVerMinor)) {
-                // Document has changed -- reacquire the root node
-                root = doc.FirstChildElement();
-            } else {
-                wxLogError(wxT("Unable to convert project"));
-                return false;
-            }
-        }
-
-        ticpp::Element* object = root->FirstChildElement("object");
-        PObjectBase proj;
-
-        try {
-            proj = m_objDb->CreateObject(object);
-        } catch (wxFBException& ex) {
-            wxLogError(ex.what());
-            return false;
-        }
-
-        if (proj && proj->GetObjectTypeName() == wxT("project")) {
-            PObjectBase old_proj = m_project;
-            m_project = proj;
+        if (auto projectObject = m_objDb->CreateObject(project); projectObject && projectObject->GetObjectTypeName() == "project") {
+            m_project = projectObject;
             m_selObj = m_project;
+            m_projectFile = filename.GetFullPath();
+            SetProjectPath(filename.GetPath());
             // Set the modification to true if the project was older and has been converted
-            m_modFlag = older;
+            m_modFlag = (versionState == VersionState::OLDER);
             m_cmdProc.Reset();
-            m_projectFile = file;
-            SetProjectPath(::wxPathOnly(file));
             NotifyProjectLoaded();
             NotifyProjectRefresh();
         }
-    } catch (ticpp::Exception& ex) {
-        wxLogError(_WXSTR(ex.m_details));
-        return false;
-    }
-
-    return true;
-}
-
-bool ApplicationData::ConvertProject(ticpp::Document& doc, const wxString& path, int fileMajor, int fileMinor)
-{
-    try {
-        XMLUtils::LoadXMLFile(doc, false, path);
-
-        ticpp::Element* root = doc.FirstChildElement();
-        if (root->Value() == std::string("object")) {
-            ConvertProjectProperties(root, path, fileMajor, fileMinor);
-            ConvertObject(root, fileMajor, fileMinor);
-
-            // Create a clone of now-converted object tree, so it can be linked
-            // underneath the root element
-            std::unique_ptr<ticpp::Node> objectTree = root->Clone();
-
-            // Clear the document to add the declaration and the root element
-            doc.Clear();
-
-            // Add the declaration
-            doc.LinkEndChild(new ticpp::Declaration("1.0", "UTF-8", "yes"));
-
-            // Add the root element, with file version
-            ticpp::Element* newRoot = new ticpp::Element("wxFormBuilder_Project");
-
-            ticpp::Element* fileVersion = new ticpp::Element("FileVersion");
-            fileVersion->SetAttribute("major", m_fbpVerMajor);
-            fileVersion->SetAttribute("minor", m_fbpVerMinor);
-
-            newRoot->LinkEndChild(fileVersion);
-
-            // Add the object tree
-            newRoot->LinkEndChild(objectTree.release());
-
-            doc.LinkEndChild(newRoot);
-        } else {
-            // Handle project separately because it only occurs once
-            ticpp::Element* project = root->FirstChildElement("object");
-            ConvertProjectProperties(project, path, fileMajor, fileMinor);
-            ConvertObject(project, fileMajor, fileMinor);
-            ticpp::Element* fileVersion = root->FirstChildElement("FileVersion");
-            fileVersion->SetAttribute("major", m_fbpVerMajor);
-            fileVersion->SetAttribute("minor", m_fbpVerMinor);
-        }
-    } catch (ticpp::Exception& ex) {
-        wxLogError(_WXSTR(ex.m_details));
+    } catch (wxFBException& ex) {
+        wxLogError(ex.what());
         return false;
     }
 
@@ -1366,162 +1344,6 @@ bool ApplicationData::ConvertProject(tinyxml2::XMLDocument* doc, const wxString&
     return true;
 }
 
-void ApplicationData::ConvertProjectProperties(
-  ticpp::Element* project, const wxString& path, int fileMajor, int fileMinor)
-
-{
-    // Ensure that this is the "project" element
-    std::string objClass;
-    project->GetAttribute("class", &objClass);
-
-    if (objClass != "Project") {
-        return;
-    }
-
-    // Reusable sets for finding properties
-    std::set<std::string> oldProps;
-    std::set<ticpp::Element*> newProps;
-
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 5)) {
-        // Find the user_headers property
-
-        oldProps.insert("user_headers");
-        GetPropertiesToConvert(project, oldProps, &newProps);
-
-        std::string user_headers;
-        if (!newProps.empty()) {
-            user_headers = (*newProps.begin())->GetText(false);
-            project->RemoveChild(*newProps.begin());
-        }
-
-        if (!user_headers.empty()) {
-            wxString msg = _("The \"user_headers\" property has been removed.\n");
-            msg += _("Its purpose was to provide a place to include precompiled headers or\n");
-            msg += _("headers for subclasses.\n");
-            msg += _("There is now a \"precompiled_header\" property and a \"header\" subitem\n");
-            msg += _("on the subclass property.\n\n");
-            msg += _("Would you like the current value of the \"user_headers\" property to be saved\n");
-            msg += _("to a file so that you can distribute the headers among the \"precompiled_header\"\n");
-            msg += _("and \"subclass\" properties\?");
-
-            if (
-              wxYES == wxMessageBox(
-                         msg, _("The \"user_headers\" property has been removed"),
-                         wxICON_QUESTION | wxYES_NO | wxYES_DEFAULT, wxTheApp->GetTopWindow())) {
-                wxString name;
-                wxFileName::SplitPath(path, NULL, NULL, &name, NULL);
-                wxFileDialog dialog(
-                  wxTheApp->GetTopWindow(), _("Save \"user_headers\""), ::wxPathOnly(path),
-                  name + wxT("_user_headers.txt"), wxT("All files (*.*)|*.*"), wxFD_SAVE);
-
-                if (dialog.ShowModal() == wxID_OK) {
-                    wxString wxuser_headers = _WXSTR(user_headers);
-                    wxString filename = dialog.GetPath();
-                    bool success = false;
-                    wxFFile output(filename, wxT("w"));
-
-                    if (output.IsOpened()) {
-                        if (output.Write(wxuser_headers)) {
-                            output.Close();
-                            success = true;
-                        }
-                    }
-
-                    if (!success) {
-                        wxLogError(_("Unable to open %s for writing.\nUser Headers:\n%s"), filename, wxuser_headers);
-                    }
-                }
-            }
-        }
-    }
-
-
-    // The pch property is now the exact code to be generated, not just the header filename
-    // The goal of this conversion block is to determine which of two possible pch blocks to use
-    // The pch block that wxFB generated changed in version 1.6
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 8)) {
-        oldProps.clear();
-        newProps.clear();
-        oldProps.insert("precompiled_header");
-        GetPropertiesToConvert(project, oldProps, &newProps);
-
-        if (!newProps.empty()) {
-            std::string pch = (*newProps.begin())->GetText(false);
-            if (!pch.empty()) {
-                if (fileMajor < 1 || (1 == fileMajor && fileMinor < 6)) {
-                    // use the older block
-                    (*newProps.begin())
-                      ->SetText(
-                        "#include \"" + pch +
-                        "\""
-                        "\n"
-                        "\n#ifdef __BORLANDC__"
-                        "\n#pragma hdrstop"
-                        "\n#endif //__BORLANDC__"
-                        "\n"
-                        "\n#ifndef WX_PRECOMP"
-                        "\n#include <wx/wx.h>"
-                        "\n#endif //WX_PRECOMP");
-                } else {
-                    // use the newer block
-                    (*newProps.begin())
-                      ->SetText(
-                        "#ifdef WX_PRECOMP"
-                        "\n"
-                        "\n#include \"" +
-                        pch +
-                        "\""
-                        "\n"
-                        "\n#ifdef __BORLANDC__"
-                        "\n#pragma hdrstop"
-                        "\n#endif //__BORLANDC__"
-                        "\n"
-                        "\n#else"
-                        "\n#include <wx/wx.h>"
-                        "\n#endif //WX_PRECOMP");
-                }
-            }
-        }
-    }
-
-    // The format of string list properties changed in version 1.9
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 9)) {
-        oldProps.clear();
-        newProps.clear();
-        oldProps.insert("namespace");
-        oldProps.insert("bitmaps");
-        oldProps.insert("icons");
-        GetPropertiesToConvert(project, oldProps, &newProps);
-
-        std::set<ticpp::Element*>::iterator prop;
-        for (prop = newProps.begin(); prop != newProps.end(); ++prop) {
-            std::string value = (*prop)->GetText(false);
-            if (!value.empty()) {
-                wxArrayString array = TypeConv::OldStringToArrayString(_WXSTR(value));
-                (*prop)->SetText(_STDSTR(TypeConv::ArrayStringToString(array)));
-            }
-        }
-    }
-
-    // event_handler moved to the forms in version 1.10
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 10)) {
-        oldProps.clear();
-        newProps.clear();
-        oldProps.insert("event_handler");
-        GetPropertiesToConvert(project, oldProps, &newProps);
-
-
-        if (!newProps.empty()) {
-            ticpp::Iterator<ticpp::Element> object("object");
-            for (object = project->FirstChildElement("object", false); object != object.end(); ++object) {
-                object->LinkEndChild((*newProps.begin())->Clone().get());
-            }
-
-            project->RemoveChild(*newProps.begin());
-        }
-    }
-}
-
 void ApplicationData::ConvertProjectProperties(tinyxml2::XMLElement* project, const wxString& path, int versionMajor, int versionMinor)
 {
     if (auto projectClass = XMLUtils::StringAttribute(project, "class"); projectClass != "Project") {
@@ -1561,7 +1383,7 @@ void ApplicationData::ConvertProjectProperties(tinyxml2::XMLElement* project, co
                     if (dlg.ShowModal() == wxID_OK) {
                         wxLogNull noLog;
                         auto outputPath = dlg.GetPath();
-                        if (wxFFile outputFile(outputPath, "wb"); outputFile.IsOpened()) {
+                        if (wxFFile outputFile(outputPath, "w"); outputFile.IsOpened()) {
                             outputFile.Write(userHeadersValue);
                         } else {
                             wxLogError(_("Failed to open %s for writing \"user_headers\":\n%s"), outputPath, userHeadersValue);
@@ -1642,592 +1464,61 @@ void ApplicationData::ConvertProjectProperties(tinyxml2::XMLElement* project, co
             eventHandlerProperty->GetDocument()->DeleteNode(eventHandlerProperty);
         }
     }
-}
 
-void ApplicationData::ConvertObject(ticpp::Element* parent, int fileMajor, int fileMinor)
-{
-    ticpp::Iterator<ticpp::Element> object("object");
-
-    for (object = parent->FirstChildElement("object", false); object != object.end(); ++object) {
-        ConvertObject(object.Get(), fileMajor, fileMinor);
-    }
-
-    // Reusable sets to find properties with
-    std::set<std::string> oldProps;
-
-    std::set<ticpp::Element*> newProps;
-
-    std::set<ticpp::Element*>::iterator newProp;
-
-    // Get the class of the object
-    std::string objClass;
-
-    parent->GetAttribute("class", &objClass);
-
-    /* The changes below will convert an unversioned file to version 1.3 */
-
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 3)) {
-        // The property 'option' became 'proportion'
-
-        if (objClass == "sizeritem" || objClass == "gbsizeritem" || objClass == "spacer") {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("option");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                // One in, one out
-                (*newProps.begin())->SetAttribute("name", "proportion");
-            }
+    if (versionMajor < 1 || (versionMajor == 1 && versionMinor < 18)) {
+        auto cppProperties = GetProperties(project, {
+            "precompiled_header",
+            "namespace",
+            "class_decoration",
+            "use_enum",
+            "use_array_enum",
+            "help_provider",
+            "event_generation",
+            "disconnect_events"
+        });
+        for (auto& property : cppProperties) {
+            auto name = XMLUtils::StringAttribute(property, "name");
+            XMLUtils::SetAttribute(property, "name", wxString::Format("cpp_%s", name));
         }
 
-        // The 'style' property used to have both wxWindow styles and the styles of the specific controls
-        // now it only has the styles of the specific controls, and wxWindow styles are saved in window_style
-        // This also applies to 'extra_style', which was once combined with 'style'.
-        // And they were named 'WindowStyle' and one point, too...
-
-        std::set<wxString> windowStyles;
-        windowStyles.insert(wxT("wxSIMPLE_BORDER"));
-        windowStyles.insert(wxT("wxDOUBLE_BORDER"));
-        windowStyles.insert(wxT("wxSUNKEN_BORDER"));
-        windowStyles.insert(wxT("wxRAISED_BORDER"));
-        windowStyles.insert(wxT("wxSTATIC_BORDER"));
-        windowStyles.insert(wxT("wxNO_BORDER"));
-        windowStyles.insert(wxT("wxTRANSPARENT_WINDOW"));
-        windowStyles.insert(wxT("wxTAB_TRAVERSAL"));
-        windowStyles.insert(wxT("wxWANTS_CHARS"));
-        windowStyles.insert(wxT("wxVSCROLL"));
-        windowStyles.insert(wxT("wxHSCROLL"));
-        windowStyles.insert(wxT("wxALWAYS_SHOW_SB"));
-        windowStyles.insert(wxT("wxCLIP_CHILDREN"));
-        windowStyles.insert(wxT("wxFULL_REPAINT_ON_RESIZE"));
-
-        // Transfer the window styles
-        oldProps.clear();
-        newProps.clear();
-
-        oldProps.insert("style");
-
-        oldProps.insert("WindowStyle");
-
-        GetPropertiesToConvert(parent, oldProps, &newProps);
-
-        for (newProp = newProps.begin(); newProp != newProps.end(); ++newProp) {
-            TransferOptionList(*newProp, &windowStyles, "window_style");
+        auto pythonProperties = GetProperties(project, {
+            "indent_with_spaces",
+            "image_path_wrapper_function_name",
+            "skip_python_events",
+            "disconnect_python_events",
+            "disconnect_mode"
+        });
+        for (auto& property : pythonProperties) {
+            auto name = XMLUtils::StringAttribute(property, "name");
+            name.Replace("_python", "");
+            XMLUtils::SetAttribute(property, "name", wxString::Format("python_%s", name));
         }
 
-
-        std::set<wxString> extraWindowStyles;
-        extraWindowStyles.insert(wxT("wxWS_EX_VALIDATE_RECURSIVELY"));
-        extraWindowStyles.insert(wxT("wxWS_EX_BLOCK_EVENTS"));
-        extraWindowStyles.insert(wxT("wxWS_EX_TRANSIENT"));
-        extraWindowStyles.insert(wxT("wxWS_EX_PROCESS_IDLE"));
-        extraWindowStyles.insert(wxT("wxWS_EX_PROCESS_UI_UPDATES"));
-
-        // Transfer the window extra styles
-        oldProps.clear();
-        newProps.clear();
-
-        oldProps.insert("style");
-
-        oldProps.insert("extra_style");
-
-        oldProps.insert("WindowStyle");
-
-        GetPropertiesToConvert(parent, oldProps, &newProps);
-
-        for (newProp = newProps.begin(); newProp != newProps.end(); ++newProp) {
-            TransferOptionList(*newProp, &extraWindowStyles, "window_extra_style");
-        }
-    }
-
-    /* The file is now at least version 1.3 */
-
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 4)) {
-        if (objClass == "wxCheckList") {
-            // The class we once named "wxCheckList" really represented a "wxCheckListBox", now that we use the #class
-            // macro in code generation, it generates the wrong code
-            parent->SetAttribute("class", "wxCheckListBox");
-        }
-    }
-
-    /* The file is now at least version 1.4 */
-
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 6)) {
-        if (objClass == "spacer") {
-            // spacer used to be represented by its own class, it is now under a sizeritem like everything else.
-            // no need to check for a wxGridBagSizer, because it was introduced at the same time.
-
-            // the goal is to change the class to sizeritem, then create a spacer child, then move "width" and "height"
-            // to the spacer
-            parent->SetAttribute("class", "sizeritem");
-            ticpp::Element spacer("object");
-            spacer.SetAttribute("class", "spacer");
-
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("width");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                // One in, one out
-                ticpp::Element* width = *newProps.begin();
-                spacer.LinkEndChild(width->Clone().release());
-                parent->RemoveChild(width);
-            }
-
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("height");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                // One in, one out
-                ticpp::Element* height = *newProps.begin();
-                spacer.LinkEndChild(height->Clone().release());
-                parent->RemoveChild(height);
-            }
-            parent->LinkEndChild(&spacer);
-        }
-    }
-
-    /* The file is now at least version 1.6 */
-
-    // Version 1.7 now stores all font properties.
-    // The font property conversion is automatic because it is just an extension of the old values.
-
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 7)) {
-        // Remove deprecated 2.6 things
-
-        // wxDialog styles wxTHICK_FRAME and wxNO_3D
-        if (objClass == "Dialog") {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                ticpp::Element* style = *newProps.begin();
-                wxString styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxTHICK_FRAME"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxTHICK_FRAME"), styles);
-                        styles = TypeConv::SetFlag(wxT("wxRESIZE_BORDER"), styles);
-                    }
-
-                    styles = TypeConv::ClearFlag(wxT("wxNO_3D"), styles);
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-    }
-
-    /* The file is now at least version 1.7 */
-
-    // The update to 1.8 only affected project properties
-    // See ConvertProjectProperties
-
-    /* The file is now at least version 1.8 */
-
-    // stringlist properties are stored in a different format as of version 1.9
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 9)) {
-        oldProps.clear();
-        newProps.clear();
-
-        if (
-          objClass == "wxComboBox" || objClass == "wxChoice" || objClass == "wxListBox" || objClass == "wxRadioBox" ||
-          objClass == "wxCheckListBox") {
-            oldProps.insert("choices");
-        } else if (objClass == "wxGrid") {
-            oldProps.insert("col_label_values");
-            oldProps.insert("row_label_values");
+        auto luaProperties = GetProperties(project, {
+            "ui_table",
+            "skip_lua_events"
+        });
+        for (auto& property : luaProperties) {
+            auto name = XMLUtils::StringAttribute(property, "name");
+            name.Replace("_lua", "");
+            XMLUtils::SetAttribute(property, "name", wxString::Format("lua_%s", name));
         }
 
-        if (!oldProps.empty()) {
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            std::set<ticpp::Element*>::iterator prop;
-            for (prop = newProps.begin(); prop != newProps.end(); ++prop) {
-                std::string value = (*prop)->GetText(false);
-                if (!value.empty()) {
-                    wxArrayString array = TypeConv::OldStringToArrayString(_WXSTR(value));
-                    (*prop)->SetText(_STDSTR(TypeConv::ArrayStringToString(array)));
-                }
-            }
+        auto phpProperties = GetProperties(project, {
+            "skip_php_events",
+            "disconnect_php_events"
+        });
+        for (auto& property : phpProperties) {
+            auto name = XMLUtils::StringAttribute(property, "name");
+            name.Replace("_php", "");
+            XMLUtils::SetAttribute(property, "name", wxString::Format("php_%s", name));
         }
-    }
-
-    /* The file is now at least version 1.9 */
-
-    // Version 1.11 now stores bitmap property in the following format:
-    // 'source'; 'data' instead of old form 'data'; 'source'.
-
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 11)) {
-        oldProps.clear();
-        newProps.clear();
-        oldProps.insert("bitmap");
-        GetPropertiesToConvert(parent, oldProps, &newProps);
-
-        std::set<ticpp::Element*>::iterator prop;
-        for (prop = newProps.begin(); prop != newProps.end(); ++prop) {
-            ticpp::Element* bitmap = *prop;
-
-            wxString image = _WXSTR(bitmap->GetText(false));
-            if (!image.empty()) {
-                if (image.AfterLast(';').Contains(_("Load From"))) {
-                    wxString source = image.AfterLast(';').Trim().Trim(false);
-                    wxString data = image.BeforeLast(';').Trim().Trim(false);
-
-                    bitmap->SetText(_STDSTR(source + wxT("; ") + data));
-                }
-            }
-        }
-
-        /* oldProps.clear();
-        newProps.clear();
-        oldProps.insert( "choices" );
-        GetPropertiesToConvert( parent, oldProps, &newProps );
-
-        for ( prop = newProps.begin(); prop != newProps.end(); ++prop )
-        {
-                ticpp::Element* choices = *prop;
-
-                wxString content = _WXSTR( choices->GetText( false ) );
-                if ( !content.empty() )
-                {
-                        content.Replace( wxT("\" \""), wxT(";") );
-                        content.Replace( wxT("\""), wxT("") );
-
-                        choices->SetText( _STDSTR( content ) );
-                }
-        }*/
-    }
-
-    /* The file is now at least version 1.11 */
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 12)) {
-        bool classUpdated = false;
-        if ("wxScintilla" == objClass) {
-            objClass = "wxStyledTextCtrl";
-            parent->SetAttribute("class", objClass);
-            classUpdated = true;
-        }
-        if ("wxTreeListCtrl" == objClass) {
-            objClass = "wxadditions::wxTreeListCtrl";
-            parent->SetAttribute("class", objClass);
-            classUpdated = true;
-        }
-        if ("wxTreeListCtrlColumn" == objClass) {
-            objClass = "wxadditions::wxTreeListCtrlColumn";
-            parent->SetAttribute("class", objClass);
-            classUpdated = true;
-        }
-        if (m_warnOnAdditionsUpdate && classUpdated) {
-            m_warnOnAdditionsUpdate = false;
-            wxLogWarning(
-              _("Updated classes from wxAdditions. You must use the latest version of wxAdditions to continue.\nNote "
-                "wxScintilla is now wxStyledListCtrl, wxTreeListCtrl is now wxadditions::wxTreeListCtrl, and "
-                "wxTreeListCtrlColumn is now wxadditions::wxTreeListCtrlColumn"));
-        }
-
-        typedef std::map<std::string, std::set<std::string> > PropertiesToRemove;
-
-        static std::set<std::string> propertyRemovalWarnings;
-        const PropertiesToRemove& propertiesToRemove = GetPropertiesToRemove_v1_12();
-        PropertiesToRemove::const_iterator it = propertiesToRemove.find(objClass);
-        if (it != propertiesToRemove.end()) {
-            RemoveProperties(parent, it->second);
-            if (0 == propertyRemovalWarnings.count(objClass)) {
-                std::stringstream ss;
-                std::ostream_iterator<std::string> out_it(ss, ", ");
-                std::copy(it->second.begin(), it->second.end(), out_it);
-
-                wxLogMessage(
-                  _("Removed properties for class %s because they are no longer supported: %s"), objClass, ss.str());
-                propertyRemovalWarnings.insert(objClass);
-            }
-        }
-    }
-
-    /* The file is now at least version 1.12 */
-    // TODO: Dont know where Version 1.13 comes from, so this is for Version 1.14
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 14)) {
-        // Rename all wx*_BORDER-Styles to wxBORDER_*-Styles and remove wxDOUBLE_BORDER
-        oldProps.clear();
-        newProps.clear();
-        oldProps.insert("style");
-        oldProps.insert("window_style");
-        GetPropertiesToConvert(parent, oldProps, &newProps);
-
-        for (newProp = newProps.begin(); newProp != newProps.end(); ++newProp) {
-            wxString styles = _WXSTR((*newProp)->GetText(false));
-            if (!styles.empty()) {
-                if (TypeConv::FlagSet(wxT("wxSIMPLE_BORDER"), styles)) {
-                    styles = TypeConv::ClearFlag(wxT("wxSIMPLE_BORDER"), styles);
-                    styles = TypeConv::SetFlag(wxT("wxBORDER_SIMPLE"), styles);
-                }
-
-                if (TypeConv::FlagSet(wxT("wxDOUBLE_BORDER"), styles)) {
-                    styles = TypeConv::ClearFlag(wxT("wxDOUBLE_BORDER"), styles);
-                }
-
-                if (TypeConv::FlagSet(wxT("wxSUNKEN_BORDER"), styles)) {
-                    styles = TypeConv::ClearFlag(wxT("wxSUNKEN_BORDER"), styles);
-                    styles = TypeConv::SetFlag(wxT("wxBORDER_SUNKEN"), styles);
-                }
-
-                if (TypeConv::FlagSet(wxT("wxRAISED_BORDER"), styles)) {
-                    styles = TypeConv::ClearFlag(wxT("wxRAISED_BORDER"), styles);
-                    styles = TypeConv::SetFlag(wxT("wxBORDER_RAISED"), styles);
-                }
-
-                if (TypeConv::FlagSet(wxT("wxSTATIC_BORDER"), styles)) {
-                    styles = TypeConv::ClearFlag(wxT("wxSTATIC_BORDER"), styles);
-                    styles = TypeConv::SetFlag(wxT("wxBORDER_STATIC"), styles);
-                }
-
-                if (TypeConv::FlagSet(wxT("wxNO_BORDER"), styles)) {
-                    styles = TypeConv::ClearFlag(wxT("wxNO_BORDER"), styles);
-                    styles = TypeConv::SetFlag(wxT("wxBORDER_NONE"), styles);
-                }
-
-                (*newProp)->SetText(_STDSTR(styles));
-            }
-        }
-
-        // wxBitmapButton: Remove wxBU_AUTODRAW and rename properties selected->pressed,
-        // hover->current
-        if ("wxBitmapButton" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                ticpp::Element* style = *newProps.begin();
-                wxString styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxBU_AUTODRAW"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxBU_AUTODRAW"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("selected");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                (*newProps.begin())->SetAttribute("name", "pressed");
-            }
-
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("hover");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                (*newProps.begin())->SetAttribute("name", "current");
-            }
-        }
-
-        // wxStaticText: Rename wxALIGN_CENTRE -> wxALIGN_CENTER_HORIZONTAL
-        else if ("wxStaticText" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                ticpp::Element* style = *newProps.begin();
-                wxString styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxALIGN_CENTRE"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxALIGN_CENTRE"), styles);
-                        styles = TypeConv::SetFlag(wxT("wxALIGN_CENTER_HORIZONTAL"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-
-        // wxRadioBox: Remove wxRA_USE_CHECKBOX
-        else if ("wxRadioBox" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                ticpp::Element* style = *newProps.begin();
-                wxString styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxRA_USE_CHECKBOX"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxRA_USE_CHECKBOX"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-
-        // wxRadioButton: Remove wxRB_USE_CHECKBOX
-        else if ("wxRadioButton" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                ticpp::Element* style = *newProps.begin();
-                wxString styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxRB_USE_CHECKBOX"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxRB_USE_CHECKBOX"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-
-        // wxStatusBar: Rename wxST_SIZEGRIP -> wxSTB_SIZEGRIP
-        else if ("wxStatusBar" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                ticpp::Element* style = *newProps.begin();
-                wxString styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxST_SIZEGRIP"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxST_SIZEGRIP"), styles);
-                        styles = TypeConv::SetFlag(wxT("wxSTB_SIZEGRIP"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-
-        // wxMenuBar: Remove wxMB_DOCKABLE
-        else if ("wxMenuBar" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                ticpp::Element* style = *newProps.begin();
-                wxString styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxMB_DOCKABLE"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxMB_DOCKABLE"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-    }
-
-    /* The file is now at least version 1.14 */
-    if (fileMajor < 1 || (1 == fileMajor && fileMinor < 15)) {
-        // Rename wxTE_CENTRE -> wxTE_CENTER
-        if ("wxTextCtrl" == objClass || "wxSearchCtrl" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                auto* style = *newProps.begin();
-                auto styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxTE_CENTRE"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxTE_CENTRE"), styles);
-                        styles = TypeConv::SetFlag(wxT("wxTE_CENTER"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-        // Rename wxALIGN_CENTRE -> wxALIGN_CENTER
-        else if ("wxGrid" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("col_label_horiz_alignment");
-            oldProps.insert("col_label_vert_alignment");
-            oldProps.insert("row_label_horiz_alignment");
-            oldProps.insert("row_label_vert_alignment");
-            oldProps.insert("cell_horiz_alignment");
-            oldProps.insert("cell_vert_alignment");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            for (newProp = newProps.begin(); newProp != newProps.end(); ++newProp) {
-                auto styles = _WXSTR((*newProp)->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxALIGN_CENTRE"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxALIGN_CENTRE"), styles);
-                        styles = TypeConv::SetFlag(wxT("wxALIGN_CENTER"), styles);
-                    }
-
-                    (*newProp)->SetText(_STDSTR(styles));
-                }
-            }
-        }
-        // wxNotebook: Remove wxNB_FLAT
-        else if ("wxNotebook" == objClass) {
-            oldProps.clear();
-            newProps.clear();
-            oldProps.insert("style");
-            GetPropertiesToConvert(parent, oldProps, &newProps);
-
-            if (!newProps.empty()) {
-                auto* style = *newProps.begin();
-                auto styles = _WXSTR(style->GetText(false));
-                if (!styles.empty()) {
-                    if (TypeConv::FlagSet(wxT("wxNB_FLAT"), styles)) {
-                        styles = TypeConv::ClearFlag(wxT("wxNB_FLAT"), styles);
-                    }
-
-                    style->SetText(_STDSTR(styles));
-                }
-            }
-        }
-    }
-
-    /* The file is now at least version 1.15 */
-    if (fileMajor < 1 || (fileMajor == 1 && fileMinor < 16)) {
-        static bool showRemovalWarnings = true;
-        if (objClass == "wxMenuBar") {
-            RemoveProperties(parent, std::set<std::string>{"label"});
-            if (showRemovalWarnings) {
-                wxLogMessage(_("Removed property label for class wxMenuBar because it is no longer used"));
-                showRemovalWarnings = false;
-            }
-        }
-    }
-
-    /* The file is now at least version 1.16 */
-    if (fileMajor < 1 || (fileMajor == 1 && fileMinor < 17)) {
-        if (
-          objClass == "ribbonButton" || objClass == "ribbonDropdownButton" || objClass == "ribbonHybridButton" ||
-          objClass == "ribbonToggleButton" || objClass == "ribbonTool" || objClass == "ribbonDropdownTool" ||
-          objClass == "ribbonHybridTool" || objClass == "ribbonToggleTool" || objClass == "ribbonGalleryItem") {
-            RemoveProperties(
-              parent, {"bg", "context_help", "context_menu", "drag_accept_files", "enabled", "fg", "font", "hidden",
-                       "maximum_size", "minimum_size", "name", "permission", "pos", "size", "subclass", "tooltip",
-                       "window_extra_style", "window_name", "window_style"});
-        }
-        if (objClass == "ribbonGalleryItem") {
-            RemoveProperties(parent, {"label", "help"});
+        // The originally unprefixed python property was silently used before, initialize the own property from that value
+        if (auto properties = GetProperties(project, {"python_disconnect_mode"}); !properties.empty()) {
+            auto* disconnectModeProperty = *properties.begin();
+            auto* phpDisconnectModeProperty = project->InsertNewChildElement("property");
+            XMLUtils::SetAttribute(phpDisconnectModeProperty, "name", "php_disconnect_mode");
+            XMLUtils::SetText(phpDisconnectModeProperty, XMLUtils::GetText(disconnectModeProperty));
         }
     }
 }
@@ -2644,27 +1935,16 @@ void ApplicationData::ConvertObject(tinyxml2::XMLElement* object, int versionMaj
             RemoveProperties(object, {"label", "help"});
         }
     }
-}
 
-void ApplicationData::GetPropertiesToConvert(
-  ticpp::Node* parent, const std::set<std::string>& names, std::set<ticpp::Element*>* properties)
-{
-    // Clear result set
-    properties->clear();
-
-    ticpp::Iterator<ticpp::Element> prop("property");
-
-    for (prop = parent->FirstChildElement("property", false); prop != prop.end(); ++prop) {
-        std::string name;
-        prop->GetAttribute("name", &name);
-
-        if (names.find(name) != names.end()) {
-            properties->insert(prop.Get());
+    // Convert to version 1.18
+    if (versionMajor < 1 || (versionMajor == 1 && versionMinor < 18)) {
+        if (objectClass == "wxAuiToolBar") {
+            RemoveProperties(object, {"label_visible", "toolbar_label"});
         }
     }
 }
 
-std::unordered_set<tinyxml2::XMLElement*> ApplicationData::GetProperties(tinyxml2::XMLElement* element, const std::unordered_set<wxString>& properties)
+std::unordered_set<tinyxml2::XMLElement*> ApplicationData::GetProperties(tinyxml2::XMLElement* element, const std::set<wxString>& properties)
 {
     std::unordered_set<tinyxml2::XMLElement*> result;
     for (auto* property = element->FirstChildElement("property"); property; property = property->NextSiblingElement("property")) {
@@ -2680,24 +1960,7 @@ std::unordered_set<tinyxml2::XMLElement*> ApplicationData::GetProperties(tinyxml
     return result;
 }
 
-void ApplicationData::RemoveProperties(ticpp::Node* parent, const std::set<std::string>& names)
-{
-    ticpp::Iterator<ticpp::Element> prop("property");
-
-    for (prop = parent->FirstChildElement("property", false); prop != prop.end();) {
-        ticpp::Element element = *prop;
-        ++prop;
-
-        std::string name;
-        element.GetAttribute("name", &name);
-
-        if (names.find(name) != names.end()) {
-            parent->RemoveChild(&element);
-        }
-    }
-}
-
-void ApplicationData::RemoveProperties(tinyxml2::XMLElement* element, const std::unordered_set<wxString>& properties)
+void ApplicationData::RemoveProperties(tinyxml2::XMLElement* element, const std::set<wxString>& properties)
 {
     for (auto* next = element->FirstChildElement("property"); next; ) {
         auto* current = next;
@@ -2713,88 +1976,7 @@ void ApplicationData::RemoveProperties(tinyxml2::XMLElement* element, const std:
     }
 }
 
-void ApplicationData::TransferOptionList(
-  ticpp::Element* prop, std::set<wxString>* options, const std::string& newPropName)
-
-{
-    wxString value = _WXSTR(prop->GetText(false));
-
-    std::set<wxString> transfer;
-
-    std::set<wxString> keep;
-
-    // Sort options - if in the 'options' set, they should be transferred to a property named 'newPropName'
-    // otherwise, they should stay
-    wxStringTokenizer tkz(value, wxT("|"), wxTOKEN_RET_EMPTY_ALL);
-
-    while (tkz.HasMoreTokens()) {
-        wxString option = tkz.GetNextToken();
-        option.Trim(false);
-        option.Trim(true);
-
-        if (options->find(option) != options->end()) {
-            // Needs to be transferred
-            transfer.insert(option);
-        } else {
-            // Should be kept
-            keep.insert(option);
-        }
-    }
-
-    // Reusable sets to find properties with
-    std::set<std::string> oldProps;
-
-    std::set<ticpp::Element*> newProps;
-
-    // If there are any to transfer, add to the target property, or make a new one
-    ticpp::Node* parent = prop->Parent();
-
-    if (!transfer.empty()) {
-        // Check for the target property
-        ticpp::Element* newProp;
-        wxString newOptionList;
-
-        oldProps.clear();
-        oldProps.insert(newPropName);
-        GetPropertiesToConvert(parent, oldProps, &newProps);
-
-        std::unique_ptr<ticpp::Element> tmpProp;
-        if (!newProps.empty()) {
-            newProp = *newProps.begin();
-            newOptionList << wxT("|") << _WXSTR(newProp->GetText(false));
-        } else {
-            tmpProp = std::make_unique<ticpp::Element>("property");
-            newProp = tmpProp.get();
-            newProp->SetAttribute("name", newPropName);
-        }
-
-        std::set<wxString>::iterator option;
-
-        for (option = transfer.begin(); option != transfer.end(); ++option) { newOptionList << wxT("|") << *option; }
-
-        newProp->SetText(_STDSTR(newOptionList.substr(1)));
-
-        if (newProps.empty()) {
-            parent->InsertBeforeChild(prop, *newProp);
-        }
-    }
-
-    // Set the value of the property to whatever is left
-    if (keep.empty()) {
-        parent->RemoveChild(prop);
-    } else {
-
-        std::set<wxString>::iterator option;
-
-        wxString newOptionList;
-
-        for (option = keep.begin(); option != keep.end(); ++option) { newOptionList << wxT("|") << *option; }
-
-        prop->SetText(_STDSTR(newOptionList.substr(1)));
-    }
-}
-
-bool ApplicationData::MoveOptions(tinyxml2::XMLElement* src, tinyxml2::XMLElement* dest, const std::unordered_set<wxString>& options, bool deleteEmptySrc)
+bool ApplicationData::MoveOptions(tinyxml2::XMLElement* src, tinyxml2::XMLElement* dest, const std::set<wxString>& options, bool deleteEmptySrc)
 {
     auto currentSrcValue = XMLUtils::GetText(src);
     auto currentDestValue = XMLUtils::GetText(dest);
@@ -2877,7 +2059,7 @@ void ApplicationData::GenerateInheritedClass(PObjectBase form, wxString classNam
         PProperty fileProp = obj->GetProperty(wxT("file"));
         PProperty genfileProp = obj->GetProperty(wxT("gen_file"));
         PProperty typeProp = obj->GetProperty(wxT("type"));
-        PProperty pchProp = obj->GetProperty(wxT("precompiled_header"));
+        PProperty pchProp = obj->GetProperty("cpp_precompiled_header");
 
         if (!(baseNameProp && nameProp && fileProp && typeProp && genfileProp && pchProp)) {
             wxLogWarning(wxT("Missing Property"));
@@ -2910,35 +2092,35 @@ void ApplicationData::GenerateInheritedClass(PObjectBase form, wxString classNam
         genfileProp->SetValue(genFile.GetFullPath());
         typeProp->SetValue(form->GetClassName());
 
-        auto pchValue = project->GetProperty(wxT("precompiled_header"));
-        if (pchValue) {
-            pchProp->SetValue(pchValue->GetValue());
+        if (auto property = project->GetProperty("cpp_precompiled_header"); property) {
+            pchProp->SetValue(property->GetValue());
         }
 
         // Determine if Microsoft BOM should be used
         bool useMicrosoftBOM = false;
-        PProperty pUseMicrosoftBOM = project->GetProperty(_("use_microsoft_bom"));
-
-        if (pUseMicrosoftBOM) {
-            useMicrosoftBOM = (pUseMicrosoftBOM->GetValueAsInteger() != 0);
+        if (auto property = project->GetProperty("use_microsoft_bom"); property) {
+            useMicrosoftBOM = (property->GetValueAsInteger() != 0);
         }
-
-        // Determine if Utf8 or Ansi is to be created
+        // Determine encoding
         bool useUtf8 = false;
-        PProperty pUseUtf8 = project->GetProperty(_("encoding"));
-
-        if (pUseUtf8) {
-            useUtf8 = (pUseUtf8->GetValueAsString() != wxT("ANSI"));
+        if (auto property = project->GetProperty("encoding"); property) {
+            useUtf8 = (property->GetValueAsString() != wxT("ANSI"));
+        }
+        // Determine eol-style
+        bool useNativeEOL = false;
+        if (auto property = project->GetProperty("use_native_eol"); property) {
+            useNativeEOL = (property->GetValueAsInteger() != 0);
         }
 
         PProperty pCodeGen = project->GetProperty(wxT("code_generation"));
         if (pCodeGen && TypeConv::FlagSet(wxT("C++"), pCodeGen->GetValue())) {
             CppCodeGenerator codegen;
+
             const wxString& fullPath = inherFile.GetFullPath();
             codegen.ParseFiles(fullPath + wxT(".h"), fullPath + wxT(".cpp"));
 
-            PCodeWriter h_cw(new FileCodeWriter(fullPath + wxT(".h"), useMicrosoftBOM, useUtf8));
-            PCodeWriter cpp_cw(new FileCodeWriter(fullPath + wxT(".cpp"), useMicrosoftBOM, useUtf8));
+            auto h_cw = std::make_shared<FileCodeWriter>(fullPath + wxT(".h"), useMicrosoftBOM, useUtf8, useNativeEOL);
+            auto cpp_cw = std::make_shared<FileCodeWriter>(fullPath + wxT(".cpp"), useMicrosoftBOM, useUtf8, useNativeEOL);
 
             codegen.SetHeaderWriter(h_cw);
             codegen.SetSourceWriter(cpp_cw);
@@ -2948,7 +2130,7 @@ void ApplicationData::GenerateInheritedClass(PObjectBase form, wxString classNam
             PythonCodeGenerator codegen;
 
             const wxString& fullPath = inherFile.GetFullPath();
-            PCodeWriter python_cw(new FileCodeWriter(fullPath + wxT(".py"), useMicrosoftBOM, useUtf8));
+            auto python_cw = std::make_shared<FileCodeWriter>(fullPath + wxT(".py"), useMicrosoftBOM, useUtf8, useNativeEOL);
 
             codegen.SetSourceWriter(python_cw);
 
@@ -2957,7 +2139,7 @@ void ApplicationData::GenerateInheritedClass(PObjectBase form, wxString classNam
             PHPCodeGenerator codegen;
 
             const wxString& fullPath = inherFile.GetFullPath();
-            PCodeWriter php_cw(new FileCodeWriter(fullPath + wxT(".php"), useMicrosoftBOM, useUtf8));
+            auto php_cw = std::make_shared<FileCodeWriter>(fullPath + wxT(".php"), useMicrosoftBOM, useUtf8, useNativeEOL);
 
             codegen.SetSourceWriter(php_cw);
 
@@ -2966,7 +2148,7 @@ void ApplicationData::GenerateInheritedClass(PObjectBase form, wxString classNam
             LuaCodeGenerator codegen;
 
             const wxString& fullPath = inherFile.GetFullPath();
-            PCodeWriter lua_cw(new FileCodeWriter(fullPath + wxT(".lua"), useMicrosoftBOM, useUtf8));
+            auto lua_cw = std::make_shared<FileCodeWriter>(fullPath + wxT(".lua"), useMicrosoftBOM, useUtf8, useNativeEOL);
 
             codegen.SetSourceWriter(lua_cw);
 
@@ -3555,80 +2737,4 @@ wxString ApplicationData::GetOutputPath()
 wxString ApplicationData::GetEmbeddedFilesOutputPath()
 {
     return GetPathProperty(wxT("embedded_files_path"));
-}
-
-ApplicationData::PropertiesToRemove& ApplicationData::GetPropertiesToRemove_v1_12() const
-{
-    static PropertiesToRemove propertiesToRemove;
-    if (propertiesToRemove.empty()) {
-        propertiesToRemove["Dialog"].insert("BottomDockable");
-        propertiesToRemove["Dialog"].insert("LeftDockable");
-        propertiesToRemove["Dialog"].insert("RightDockable");
-        propertiesToRemove["Dialog"].insert("TopDockable");
-        propertiesToRemove["Dialog"].insert("caption_visible");
-        propertiesToRemove["Dialog"].insert("center_pane");
-        propertiesToRemove["Dialog"].insert("close_button");
-        propertiesToRemove["Dialog"].insert("default_pane");
-        propertiesToRemove["Dialog"].insert("dock");
-        propertiesToRemove["Dialog"].insert("dock_fixed");
-        propertiesToRemove["Dialog"].insert("docking");
-        propertiesToRemove["Dialog"].insert("floatable");
-        propertiesToRemove["Dialog"].insert("gripper");
-        propertiesToRemove["Dialog"].insert("maximize_button");
-        propertiesToRemove["Dialog"].insert("minimize_button");
-        propertiesToRemove["Dialog"].insert("moveable");
-        propertiesToRemove["Dialog"].insert("pane_border");
-        propertiesToRemove["Dialog"].insert("pin_button");
-        propertiesToRemove["Dialog"].insert("resize");
-        propertiesToRemove["Dialog"].insert("show");
-        propertiesToRemove["Dialog"].insert("toolbar_pane");
-        propertiesToRemove["Dialog"].insert("validator_style");
-        propertiesToRemove["Dialog"].insert("validator_type");
-        propertiesToRemove["Dialog"].insert("aui_name");
-
-        propertiesToRemove["Panel"].insert("BottomDockable");
-        propertiesToRemove["Panel"].insert("LeftDockable");
-        propertiesToRemove["Panel"].insert("RightDockable");
-        propertiesToRemove["Panel"].insert("TopDockable");
-        propertiesToRemove["Panel"].insert("caption_visible");
-        propertiesToRemove["Panel"].insert("center_pane");
-        propertiesToRemove["Panel"].insert("close_button");
-        propertiesToRemove["Panel"].insert("default_pane");
-        propertiesToRemove["Panel"].insert("dock");
-        propertiesToRemove["Panel"].insert("dock_fixed");
-        propertiesToRemove["Panel"].insert("docking");
-        propertiesToRemove["Panel"].insert("floatable");
-        propertiesToRemove["Panel"].insert("gripper");
-        propertiesToRemove["Panel"].insert("maximize_button");
-        propertiesToRemove["Panel"].insert("minimize_button");
-        propertiesToRemove["Panel"].insert("moveable");
-        propertiesToRemove["Panel"].insert("pane_border");
-        propertiesToRemove["Panel"].insert("pin_button");
-        propertiesToRemove["Panel"].insert("resize");
-        propertiesToRemove["Panel"].insert("show");
-        propertiesToRemove["Panel"].insert("toolbar_pane");
-        propertiesToRemove["Panel"].insert("validator_style");
-        propertiesToRemove["Panel"].insert("validator_type");
-
-        propertiesToRemove["wxStaticText"].insert("validator_style");
-        propertiesToRemove["wxStaticText"].insert("validator_type");
-        propertiesToRemove["CustomControl"].insert("validator_style");
-        propertiesToRemove["CustomControl"].insert("validator_type");
-        propertiesToRemove["wxAuiNotebook"].insert("validator_style");
-        propertiesToRemove["wxAuiNotebook"].insert("validator_type");
-        propertiesToRemove["wxPanel"].insert("validator_style");
-        propertiesToRemove["wxPanel"].insert("validator_type");
-        propertiesToRemove["wxToolBar"].insert("validator_style");
-        propertiesToRemove["wxToolBar"].insert("validator_type");
-        propertiesToRemove["wxStyledTextCtrl"].insert("use_wxAddition");
-        propertiesToRemove["wxStyledTextCtrl"].insert("validator_style");
-        propertiesToRemove["wxStyledTextCtrl"].insert("validator_type");
-        propertiesToRemove["wxPropertyGridManager"].insert("use_wxAddition");
-        propertiesToRemove["wxPropertyGridManager"].insert("validator_style");
-        propertiesToRemove["wxPropertyGridManager"].insert("validator_type");
-
-        propertiesToRemove["wxadditions::wxTreeListCtrl"].insert("validator_style");
-        propertiesToRemove["wxadditions::wxTreeListCtrl"].insert("validator_type");
-    }
-    return propertiesToRemove;
 }

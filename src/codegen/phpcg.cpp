@@ -125,6 +125,7 @@ wxString PHPTemplateParser::ValueToCode(PropertyType type, wxString value)
             break;
         }
         case PT_TEXT:
+        case PT_TEXT_ML:
         case PT_FLOAT:
         case PT_INT:
         case PT_UINT: {
@@ -241,9 +242,10 @@ wxString PHPTemplateParser::ValueToCode(PropertyType type, wxString value)
                     rid = wxT("wxT(\"") + rid + wxT("\")");
 
                 result = wxT("wxArtProvider::GetBitmap( ") + rid + wxT(", ") + path.AfterFirst(wxT(':')) + wxT(" )");
+            } else if (source == _("Load From SVG Resource")) {
+                wxLogWarning(wxT("PHP code generation does not support using SVG resources for bitmap properties:\n%s"), path);
+                result = wxT("wxNullBitmap");
             }
-            break;
-
             break;
         }
         case PT_STRINGLIST: {
@@ -380,7 +382,7 @@ bool PHPCodeGenerator::GenerateCode(PObjectBase project)
     if (i18nProperty && i18nProperty->GetValueAsInteger())
         m_i18n = true;
 
-    m_disconnectEvents = (project->GetPropertyAsInteger(wxT("disconnect_php_events")) != 0);
+    m_disconnectEvents = (project->GetPropertyAsInteger("php_disconnect_events") != 0);
 
     m_source->Clear();
 
@@ -441,14 +443,14 @@ bool PHPCodeGenerator::GenerateCode(PObjectBase project)
     GenDefines(project);
 
     wxString eventHandlerPostfix;
-    PProperty eventKindProp = project->GetProperty(wxT("skip_php_events"));
+    PProperty eventKindProp = project->GetProperty("php_skip_events");
     if (eventKindProp->GetValueAsInteger()) {
         eventHandlerPostfix = wxT("$event->Skip();");
     } else {
         eventHandlerPostfix = wxEmptyString;
     }
 
-    PProperty disconnectMode = project->GetProperty(wxT("disconnect_mode"));
+    PProperty disconnectMode = project->GetProperty("php_disconnect_mode");
     m_disconnecMode = disconnectMode->GetValueAsString();
 
     for (unsigned int i = 0; i < project->GetChildCount(); i++) {
@@ -1191,7 +1193,7 @@ void PHPCodeGenerator::GenDefines(PObjectBase project)
     }
 
     unsigned int id = m_firstID;
-    if (id < 1000) {
+    if (id < wxID_HIGHEST) {
         wxLogWarning(wxT("First ID is Less than 1000"));
     }
     for (it = macros.begin(); it != macros.end(); it++) {
@@ -1224,8 +1226,8 @@ void PHPCodeGenerator::GenSettings(PObjectInfo info, PObjectBase obj)
     }
 
     // Proceeding recursively with the base classes
-    for (unsigned int i = 0; i < info->GetBaseClassCount(); i++) {
-        PObjectInfo base_info = info->GetBaseClass(i);
+    for (unsigned int i = 0; i < info->GetBaseClassCount(false); i++) {
+        PObjectInfo base_info = info->GetBaseClass(i, false);
         GenSettings(base_info, obj);
     }
 }

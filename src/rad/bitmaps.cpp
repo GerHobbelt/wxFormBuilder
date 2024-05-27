@@ -30,10 +30,8 @@
 #include <wx/intl.h>
 #include <wx/log.h>
 
-#include <default.xpm>
-
-#include "utils/wxfbexception.h"
-#include "utils/xmlutils.h"
+#include <plugin_interface/default.xpm>
+#include <common/xmlutils.h>
 
 FZ_HEAPDBG_TRACKER_SECTION_START_MARKER(_1)
 
@@ -64,11 +62,14 @@ void AppBitmaps::LoadBitmaps(const wxString& filepath, const wxString& iconpath)
 {
     m_bitmaps.insert_or_assign("unknown", wxBitmap(default_xpm));
 
-    std::unique_ptr<tinyxml2::XMLDocument> doc;
-    try {
-        doc = XMLUtils::LoadXMLFile(filepath, true);
-    } catch (wxFBException& ex) {
-        wxLogError(ex.what());
+    auto doc = XMLUtils::LoadXMLFile(filepath, true);
+    if (!doc) {
+        wxLogError(_("%s: Failed to open file"), filepath);
+
+        return;
+    }
+    if (doc->Error()) {
+        wxLogError(doc->ErrorStr());
 
         return;
     }

@@ -149,6 +149,7 @@ wxString LuaTemplateParser::ValueToCode(PropertyType type, wxString value)
             break;
         }
         case PT_TEXT:
+        case PT_TEXT_ML:
         case PT_FLOAT:
         case PT_INT:
         case PT_UINT: {
@@ -297,6 +298,9 @@ wxString LuaTemplateParser::ValueToCode(PropertyType type, wxString value)
                 cid.Replace(wxT("wx"), wxT("wx.wx"));
 
                 result = wxT("wx.wxArtProvider.GetBitmap( ") + rid + wxT(", ") + cid + wxT(" )");
+            } else if (source == _("Load From SVG Resource")) {
+                wxLogWarning(wxT("Lua code generation does not support using SVG resources for bitmap properties:\n%s"), path);
+                result = wxT("wx.wxNullBitmap");
             }
             break;
         }
@@ -549,7 +553,7 @@ bool LuaCodeGenerator::GenerateCode(PObjectBase project)
     // Generating "defines" for macros
     GenDefines(project);
 
-    PProperty propNamespace = project->GetProperty(wxT("ui_table"));
+    PProperty propNamespace = project->GetProperty("lua_ui_table");
     if (propNamespace) {
         m_strUITable = propNamespace->GetValueAsString();
         if (m_strUITable.length() <= 0) {
@@ -560,7 +564,7 @@ bool LuaCodeGenerator::GenerateCode(PObjectBase project)
     }
 
 
-    PProperty eventKindProp = project->GetProperty(wxT("skip_lua_events"));
+    PProperty eventKindProp = project->GetProperty("lua_skip_events");
     if (eventKindProp->GetValueAsInteger()) {
         m_strEventHandlerPostfix = wxT("event:Skip()");
     } else {
@@ -568,8 +572,10 @@ bool LuaCodeGenerator::GenerateCode(PObjectBase project)
     }
 
 
-    PProperty disconnectMode = project->GetProperty(wxT("disconnect_mode"));
-    m_disconnecMode = disconnectMode->GetValueAsString();
+    // NOTE: This property does not exist, disconnection is actually unused, but due to copy-paste
+    //       the member variable does exist
+    //PProperty disconnectMode = project->GetProperty("lua_disconnect_mode");
+    //m_disconnecMode = disconnectMode->GetValueAsString();
 
     unsigned int dProjChildCount = project->GetChildCount();
     for (unsigned int i = 0; i < dProjChildCount; i++) {
@@ -850,7 +856,7 @@ wxString LuaCodeGenerator::GetConstruction(PObjectBase obj, bool silent, wxStrin
     // UI table code copied from TemplateParser
     wxString strTableName;
     const auto& project = AppData()->GetProjectData();
-    const auto& table = project->GetProperty(wxT("ui_table"));
+    const auto& table = project->GetProperty("lua_ui_table");
     if (table) {
         strTableName = table->GetValueAsString();
         if (strTableName.empty()) {
@@ -1219,12 +1225,16 @@ void LuaCodeGenerator::GenConstruction(PObjectBase obj, bool is_widget, wxString
                 // It's not a good practice to embed templates into the source code,
                 // because you will need to recompile...
 
+                // In Lua the root-element is also just a member of the UI-table, using #wxparent in Lua is pretty much always wrong
                 wxString _template =
-                  wxT("#utbl#wxparent$name:SetSizer( #utbl$name ) #nl") wxT("#utbl#wxparent$name:Layout()")
-                    wxT("#ifnull #parent $size") wxT("@{ #nl #utbl$name:Fit( #utbl#wxparent $name ) @}");
+                  wxT("#utbl#parent $name:SetSizer( #utbl$name ) #nl") wxT("#utbl#parent $name:Layout()")
+                    wxT("#ifnull #parent $size") wxT("@{ #nl #utbl$name:Fit( #utbl#parent $name ) @}");
 
                 LuaTemplateParser parser(obj, _template, m_i18n, m_useRelativePath, m_basePath, m_strUserIDsVec);
                 wxString res = parser.ParseTemplate();
+                // FIXME: This is pretty pointless here and will lead to an error if the UI-table uses the same name like
+                //        that magic value of LuaTemplateParser::RootWxParentToCode(). But this is also broken in other parts
+                //        and it is currently unknown why this was done in the first place.
                 res.Replace(parser.RootWxParentToCode(), wxEmptyString);
                 m_source->WriteLn(res);
             }
@@ -1421,7 +1431,7 @@ void LuaCodeGenerator::GenDefines(PObjectBase project)
     }
 
     unsigned int id = m_firstID;
-    if (id < 1000) {
+    if (id < wxID_HIGHEST) {
         wxLogWarning(wxT("First ID is Less than 1000"));
     }
     for (it = macros.begin(); it != macros.end(); it++) {

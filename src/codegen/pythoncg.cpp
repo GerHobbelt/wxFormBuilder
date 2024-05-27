@@ -145,6 +145,7 @@ wxString PythonTemplateParser::ValueToCode(PropertyType type, wxString value)
             break;
         }
         case PT_TEXT:
+        case PT_TEXT_ML:
         case PT_FLOAT:
         case PT_INT:
         case PT_UINT: {
@@ -290,6 +291,10 @@ wxString PythonTemplateParser::ValueToCode(PropertyType type, wxString value)
                 cid.Replace(wxT("wx"), wxT("wx."));
 
                 result = wxT("wx.ArtProvider.GetBitmap( ") + rid + wxT(", ") + cid + wxT(" )");
+            } else if (source == _("Load From SVG Resource")) {
+                wxLogWarning(
+                  wxT("Python code generation does not support using SVG resources for bitmap properties:\n%s"), path);
+                result = wxT("wx.NullBitmap");
             }
             break;
         }
@@ -427,7 +432,7 @@ bool PythonCodeGenerator::GenerateCode(PObjectBase project)
     if (i18nProperty && i18nProperty->GetValueAsInteger())
         m_i18n = true;
 
-    m_disconnectEvents = (project->GetPropertyAsInteger(wxT("disconnect_python_events")) != 0);
+    m_disconnectEvents = (project->GetPropertyAsInteger("python_disconnect_events") != 0);
 
     m_source->Clear();
 
@@ -490,13 +495,13 @@ bool PythonCodeGenerator::GenerateCode(PObjectBase project)
     GenDefines(project);
 
     wxString eventHandlerPostfix;
-    PProperty eventKindProp = project->GetProperty(wxT("skip_python_events"));
+    PProperty eventKindProp = project->GetProperty("python_skip_events");
     if (eventKindProp->GetValueAsInteger()) {
         eventHandlerPostfix = wxT("event.Skip()");
     } else
         eventHandlerPostfix = wxT("pass");
 
-    PProperty disconnectMode = project->GetProperty(wxT("disconnect_mode"));
+    PProperty disconnectMode = project->GetProperty("python_disconnect_mode");
     m_disconnecMode = disconnectMode->GetValueAsString();
 
     for (unsigned int i = 0; i < project->GetChildCount(); i++) {
@@ -1287,7 +1292,7 @@ void PythonCodeGenerator::GenDefines(PObjectBase project)
     }
 
     unsigned int id = m_firstID;
-    if (id < 1000) {
+    if (id < wxID_HIGHEST) {
         wxLogWarning(wxT("First ID is Less than 1000"));
     }
     for (it = macros.begin(); it != macros.end(); it++) {
@@ -1535,10 +1540,12 @@ void PythonCodeGenerator::SetupPredefinedMacros()
 void PythonTemplateParser::SetupModulePrefixes()
 {
     // altered class names
+    ADD_PREDEFINED_PREFIX(wxBitmapComboBox, wx.adv.);
     ADD_PREDEFINED_PREFIX(wxCalendarCtrl, wx.adv.);
     ADD_PREDEFINED_PREFIX(wxRichTextCtrl, wx.richtext.);
     ADD_PREDEFINED_PREFIX(wxStyledTextCtrl, wx.stc.);
     ADD_PREDEFINED_PREFIX(wxHtmlWindow, wx.html.);
+    ADD_PREDEFINED_PREFIX(wxAuiToolBar, wx.aui.);
     ADD_PREDEFINED_PREFIX(wxAuiNotebook, wx.aui.);
     ADD_PREDEFINED_PREFIX(wxGrid, wx.grid.);
     ADD_PREDEFINED_PREFIX(wxAnimationCtrl, wx.adv.);
@@ -1546,6 +1553,18 @@ void PythonTemplateParser::SetupModulePrefixes()
     ADD_PREDEFINED_PREFIX(wxTimePickerCtrl, wx.adv.);
     ADD_PREDEFINED_PREFIX(wxHyperlinkCtrl, wx.adv.);
     ADD_PREDEFINED_PREFIX(wxMediaCtrl, wx.media.);
+    ADD_PREDEFINED_PREFIX(wxDataViewCtrl, wx.dataview.);
+    ADD_PREDEFINED_PREFIX(wxDataViewTreeCtrl, wx.dataview.);
+    ADD_PREDEFINED_PREFIX(wxDataViewListCtrl, wx.dataview.);
+    ADD_PREDEFINED_PREFIX(wxTreeListCtrl, wx.dataview.);
+    ADD_PREDEFINED_PREFIX(wxPropertyGrid, wx.propgrid.);
+    ADD_PREDEFINED_PREFIX(wxPropertyGridManager, wx.propgrid.);
+    ADD_PREDEFINED_PREFIX(wxRibbonBar, wx.lib.agw.ribbon.);
+    ADD_PREDEFINED_PREFIX(wxRibbonPage, wx.lib.agw.ribbon.);
+    ADD_PREDEFINED_PREFIX(wxRibbonPanel, wx.lib.agw.ribbon.);
+    ADD_PREDEFINED_PREFIX(wxRibbonButtonBar, wx.lib.agw.ribbon.);
+    ADD_PREDEFINED_PREFIX(wxRibbonToolBar, wx.lib.agw.ribbon.);
+    ADD_PREDEFINED_PREFIX(wxRibbonGallery, wx.lib.agw.ribbon.);
 
     // altered macros
     ADD_PREDEFINED_PREFIX(wxCAL_SHOW_HOLIDAYS, wx.adv.);

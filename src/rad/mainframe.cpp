@@ -28,6 +28,8 @@
 
 #include <wx/config.h>
 
+#include <common/xmlutils.h>
+
 #include "model/xrcfilter.h"
 #include "rad/about.h"
 #include "rad/appdata.h"
@@ -49,7 +51,6 @@
 #include "rad/wxfbevent.h"
 #include "rad/wxfbmanager.h"
 #include "rad/xrcpanel/xrcpanel.h"
-#include "utils/stringutils.h"
 #include "utils/wxfbexception.h"
 
 
@@ -594,34 +595,40 @@ void MainFrame::OnOpenRecent(wxCommandEvent& event)
     }
 }
 
-void MainFrame::OnImportXrc(wxCommandEvent&)
+void MainFrame::OnImportXrc([[maybe_unused]] wxCommandEvent& event)
 {
-    wxFileDialog* dialog =
-      new wxFileDialog(this, wxT("Import XRC file"), m_currentDir, wxT("example.xrc"), wxT("*.xrc"), wxFD_OPEN);
-
-    if (dialog->ShowModal() == wxID_OK) {
-        m_currentDir = dialog->GetDirectory();
-
-        try {
-            ticpp::Document doc;
-            XMLUtils::LoadXMLFile(doc, false, dialog->GetPath());
-
-            XrcLoader xrc;
-            xrc.SetObjectDatabase(AppData()->GetObjectDatabase());
-
-            PObjectBase project = xrc.GetProject(&doc);
-
-            if (project) {
-                AppData()->MergeProject(project);
-            } else {
-                wxLogError(wxT("Error while loading XRC"));
-            }
-        } catch (wxFBException& ex) {
-            wxLogError(_("Error Loading XRC: %s"), ex.what());
-        }
+    wxFileDialog dlg(
+        this,
+        _("Import XRC File"),
+        m_currentDir,
+        wxEmptyString,
+        _("XRC files (*.xrc)|*.xrc|All files (*.*)|*.*"),
+        wxFD_OPEN|wxFD_FILE_MUST_EXIST
+    );
+    if (dlg.ShowModal() != wxID_OK) {
+        return;
     }
 
-    dialog->Destroy();
+    wxFileName xrcFile(dlg.GetPath());
+    m_currentDir = xrcFile.GetPath();
+    XrcLoader xrcLoader(AppData()->GetObjectDatabase());
+    auto doc = XMLUtils::LoadXMLFile(xrcFile.GetFullPath(), false);
+    if (!doc) {
+        wxLogError(_("%s: Failed to open file"), xrcFile.GetFullPath());
+        return;
+    }
+    if (doc->Error()) {
+        wxLogError(doc->ErrorStr());
+        return;
+    }
+    try {
+        auto project = xrcLoader.GetProject(doc.get());
+        if (project) {
+            AppData()->MergeProject(project);
+        }
+    } catch (wxFBException& ex) {
+        wxLogError(ex.what());
+    }
 }
 
 
@@ -1679,13 +1686,13 @@ wxWindow* MainFrame::CreateDesignerWindow(wxWindow* parent)
     m_notebook->InsertPage(2, m_python, wxT("Python"), false);
     m_notebook->SetPageBitmap(2, AppBitmaps::GetBitmap(wxT("python"), AppBitmaps::Size::Icon_Medium));
 
-    m_php = new PHPPanel(m_notebook, wxID_ANY);
-    m_notebook->InsertPage(3, m_php, wxT("PHP"), false);
-    m_notebook->SetPageBitmap(3, AppBitmaps::GetBitmap(wxT("php"), AppBitmaps::Size::Icon_Medium));
-
     m_lua = new LuaPanel(m_notebook, wxID_ANY);
-    m_notebook->InsertPage(4, m_lua, wxT("Lua"), false);
-    m_notebook->SetPageBitmap(4, AppBitmaps::GetBitmap(wxT("lua"), AppBitmaps::Size::Icon_Medium));
+    m_notebook->InsertPage(3, m_lua, wxT("Lua"), false);
+    m_notebook->SetPageBitmap(3, AppBitmaps::GetBitmap(wxT("lua"), AppBitmaps::Size::Icon_Medium));
+
+    m_php = new PHPPanel(m_notebook, wxID_ANY);
+    m_notebook->InsertPage(4, m_php, wxT("PHP"), false);
+    m_notebook->SetPageBitmap(4, AppBitmaps::GetBitmap(wxT("php"), AppBitmaps::Size::Icon_Medium));
 
     m_xrc = new XrcPanel(m_notebook, wxID_ANY);
     m_notebook->InsertPage(5, m_xrc, wxT("XRC"), false);
